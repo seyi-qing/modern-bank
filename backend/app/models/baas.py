@@ -3,7 +3,7 @@ Unit-inspired BaaS resource models (simulation).
 """
 
 from datetime import datetime, timezone
-from sqlalchemy import String, Boolean, DateTime, Enum as SAEnum, Float, ForeignKey, JSON
+from sqlalchemy import String, Boolean, DateTime, Enum as SAEnum, Float, ForeignKey, Integer, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 import enum
