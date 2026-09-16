@@ -137,7 +137,7 @@ def seed_database():
             db.add_all([dep, wallet, credit])
 
         db.commit()
-        print("Database seeded – admin@modernbank.dev / Admin123!  |  demo@modernbank.dev / Demo1234!")
+        print("Database seeded")
     finally:
         db.close()
 
