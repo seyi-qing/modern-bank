@@ -29,15 +29,30 @@ export function getApiBase() {
 export const api = axios.create({
   baseURL: API_BASE,
   headers: { "Content-Type": "application/json" },
-  timeout: 15000,
+  timeout: 20000,
 });
 
+function readToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("access_token");
+}
+
+export function setAuthToken(token: string | null) {
+  if (typeof window === "undefined") return;
+  if (token) {
+    localStorage.setItem("access_token", token);
+    api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+  } else {
+    localStorage.removeItem("access_token");
+    delete api.defaults.headers.common["Authorization"];
+  }
+}
+
 api.interceptors.request.use((config) => {
-  if (typeof window !== "undefined") {
-    const token = localStorage.getItem("access_token");
-    if (token && token !== "demo-token") {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
+  const token = readToken();
+  if (token && token !== "demo-token") {
+    config.headers = config.headers || {};
+    config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });
@@ -51,9 +66,9 @@ api.interceptors.response.use(
       !isDemoMode()
     ) {
       const path = window.location.pathname;
-      // Don't bounce away during login/register attempts
+      // Never silent-bounce during auth pages — show the error instead
       if (!path.includes("/login") && !path.includes("/register")) {
-        localStorage.removeItem("access_token");
+        setAuthToken(null);
         localStorage.removeItem("refresh_token");
         window.location.href = "/login";
       }
@@ -75,7 +90,7 @@ function networkMessage(err: any): string {
 export async function login(email: string, password: string) {
   try {
     const { data } = await api.post("/auth/login/json", { email, password });
-    localStorage.setItem("access_token", data.access_token);
+    setAuthToken(data.access_token);
     localStorage.setItem("refresh_token", data.refresh_token);
     exitDemoMode();
     return data;
@@ -108,7 +123,7 @@ export async function getMe() {
 
 export function logout() {
   exitDemoMode();
-  localStorage.removeItem("access_token");
+  setAuthToken(null);
   localStorage.removeItem("refresh_token");
   localStorage.removeItem("demo_role");
   if (typeof window !== "undefined") window.location.href = "/login";

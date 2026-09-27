@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { login, getMe, getApiBase } from "@/lib/api";
+import { login, getApiBase } from "@/lib/api";
 import { useUserStore } from "@/lib/store";
 import { enterDemoMode, demoUser, demoAdmin } from "@/lib/demo";
 
@@ -23,13 +23,13 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const data = await login(email, password);
-      // Prefer user from login response (avoids a second /me call that can 401 on SQLite)
-      let me = data?.user;
+      const me = data?.user;
       if (!me) {
-        me = await getMe();
+        throw new Error("Login succeeded but no user returned. Redeploy the API.");
       }
       setUser(me);
-      router.push(me.role === "admin" ? "/admin" : "/dashboard");
+      // Full navigation so axios defaults + storage are used on a fresh page load
+      window.location.href = me.role === "admin" ? "/admin" : "/dashboard";
     } catch (err: any) {
       const msg = err?.message || "Login failed";
       setError(msg);
@@ -44,7 +44,7 @@ export default function LoginPage() {
     localStorage.setItem("demo_role", role);
     const user = role === "admin" ? demoAdmin : demoUser;
     setUser(user);
-    router.push(role === "admin" ? "/admin" : "/dashboard");
+    window.location.href = role === "admin" ? "/admin" : "/dashboard";
   }
 
   return (
