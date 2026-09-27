@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.core.database import engine, Base, SessionLocal
+from app.core.database import engine, Base, SessionLocal, DATABASE_URL
 from app.models.user import User, UserRole, Account, AccountType, Card, CardType, CardStatus
 from app.models import baas as baas_models  # noqa: F401
 from app.core.security import get_password_hash
@@ -158,7 +158,6 @@ app = FastAPI(
 )
 
 origins = settings.cors_list()
-# Allow any *.vercel.app preview in demo deployments
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -177,6 +176,15 @@ app.include_router(payments.router, prefix=settings.API_PREFIX)
 app.include_router(baas.router, prefix=settings.API_PREFIX)
 
 
+def _db_kind() -> str:
+    u = DATABASE_URL.lower()
+    if u.startswith("postgresql"):
+        return "postgresql"
+    if u.startswith("sqlite"):
+        return "sqlite"
+    return "other"
+
+
 @app.get("/")
 def root():
     return {
@@ -184,9 +192,18 @@ def root():
         "version": settings.APP_VERSION,
         "docs": "/docs",
         "status": "operational",
+        "database": _db_kind(),
     }
 
 
 @app.get("/health")
 def health():
-    return {"status": "healthy"}
+    return {
+        "status": "healthy",
+        "database": _db_kind(),
+        "hint": (
+            "Set DATABASE_URL to a Neon postgresql:// string on Vercel if you see login 200 then /me 401"
+            if _db_kind() == "sqlite"
+            else "ok"
+        ),
+    }

@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 from app.models.user import User, UserRole, Account, AccountType
-from app.models.schemas import UserRegister, UserLogin
+from app.models.schemas import UserRegister, UserLogin, UserOut
 from app.core.security import get_password_hash, verify_password, create_access_token, create_refresh_token
 from app.core.config import settings
 import random
@@ -75,6 +75,7 @@ def authenticate_user(db: Session, data: UserLogin) -> User:
 
     user.last_login = datetime.now(timezone.utc)
     db.commit()
+    db.refresh(user)
     return user
 
 
@@ -84,4 +85,5 @@ def create_tokens_for_user(user: User) -> dict:
         "access_token": create_access_token(payload),
         "refresh_token": create_refresh_token(payload),
         "token_type": "bearer",
+        "user": UserOut.model_validate(user),
     }

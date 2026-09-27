@@ -22,14 +22,17 @@ export default function LoginPage() {
     setShowOffline(false);
     setLoading(true);
     try {
-      await login(email, password);
-      const me = await getMe();
+      const data = await login(email, password);
+      // Prefer user from login response (avoids a second /me call that can 401 on SQLite)
+      let me = data?.user;
+      if (!me) {
+        me = await getMe();
+      }
       setUser(me);
       router.push(me.role === "admin" ? "/admin" : "/dashboard");
     } catch (err: any) {
       const msg = err?.message || "Login failed";
       setError(msg);
-      // Only suggest offline when the API truly cannot be reached
       if (err?.isNetwork) setShowOffline(true);
     } finally {
       setLoading(false);

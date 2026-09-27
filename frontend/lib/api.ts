@@ -1,7 +1,5 @@
 /**
  * API client for ModernBank backend.
- * When the backend is unreachable, callers can fall back to offline demo data
- * (see lib/demo.ts) so the Vercel portfolio still walks through the product.
  */
 
 import axios, { AxiosError } from "axios";
@@ -31,7 +29,7 @@ export function getApiBase() {
 export const api = axios.create({
   baseURL: API_BASE,
   headers: { "Content-Type": "application/json" },
-  timeout: 12000,
+  timeout: 15000,
 });
 
 api.interceptors.request.use((config) => {
@@ -52,12 +50,11 @@ api.interceptors.response.use(
       typeof window !== "undefined" &&
       !isDemoMode()
     ) {
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("refresh_token");
-      if (
-        !window.location.pathname.includes("/login") &&
-        !window.location.pathname.includes("/register")
-      ) {
+      const path = window.location.pathname;
+      // Don't bounce away during login/register attempts
+      if (!path.includes("/login") && !path.includes("/register")) {
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("refresh_token");
         window.location.href = "/login";
       }
     }
