@@ -50,14 +50,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <div className="flex min-h-screen bg-surface-950">
       <Sidebar />
-      <main className="flex-1 overflow-x-hidden">
+      <main className="flex-1 overflow-x-hidden min-w-0">
         {demo && (
           <div className="bg-amber-500/15 border-b border-amber-500/25 text-amber-100 text-xs sm:text-sm px-4 py-2 text-center">
-            Offline demo mode — data is simulated. Deploy the API and set{" "}
-            <code className="text-amber-200">NEXT_PUBLIC_API_URL</code> for a live session.
+            Offline demo mode — data is simulated.
           </div>
         )}
-        <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto">{children}</div>
+        {/* pt-16 on mobile clears the fixed hamburger button */}
+        <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto pt-16 lg:pt-8">{children}</div>
       </main>
     </div>
   );

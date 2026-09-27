@@ -58,13 +58,13 @@ export default function DashboardOverview() {
   return (
     <div className="space-y-8">
       <header className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <p className="text-sm text-slate-500 mb-1">Total balance</p>
-          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-white">
+          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-white tabular-nums break-all">
             {formatMoney(data.total_balance)}
           </h1>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 shrink-0">
           <Link
             href="/dashboard/transfer"
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-sm font-medium text-white transition"
@@ -100,7 +100,7 @@ export default function DashboardOverview() {
         />
         <Stat
           label="Savings goals"
-          value={`${data.savings_progress.toFixed(0)}%`}
+          value={`${Number(data.savings_progress || 0).toFixed(0)}%`}
           icon={<CreditCard className="w-4 h-4 text-violet-400" />}
         />
       </div>
@@ -113,15 +113,15 @@ export default function DashboardOverview() {
               {(data.accounts || []).map((a) => (
                 <li
                   key={a.id}
-                  className="flex items-center justify-between py-3 border-b border-white/5 last:border-0"
+                  className="flex items-center justify-between py-3 border-b border-white/5 last:border-0 gap-3"
                 >
-                  <div>
-                    <p className="font-medium capitalize text-white">
+                  <div className="min-w-0">
+                    <p className="font-medium capitalize text-white truncate">
                       {a.account_type} · {maskAccount(a.account_number)}
                     </p>
                     <p className="text-xs text-slate-500 mt-0.5">{a.currency}</p>
                   </div>
-                  <p className="font-semibold tabular-nums text-white">
+                  <p className="font-semibold tabular-nums text-white shrink-0">
                     {formatMoney(a.balance, a.currency)}
                   </p>
                 </li>
@@ -141,7 +141,8 @@ export default function DashboardOverview() {
             </div>
             <ul className="space-y-1">
               {(data.recent_transactions || []).slice(0, 6).map((tx) => {
-                const out = String(tx.type || "").includes("out") ||
+                const out =
+                  String(tx.type || "").includes("out") ||
                   String(tx.type || "").includes("payment") ||
                   String(tx.type || "").includes("withdraw");
                 return (

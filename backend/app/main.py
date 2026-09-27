@@ -8,17 +8,171 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.database import engine, Base, SessionLocal, DATABASE_URL
-from app.models.user import User, UserRole, Account, AccountType, Card, CardType, CardStatus
+from app.models.user import (
+    User,
+    UserRole,
+    Account,
+    AccountType,
+    Card,
+    CardType,
+    CardStatus,
+    Transaction,
+    TransactionType,
+    TransactionStatus,
+    Notification,
+    SavingsGoal,
+)
 from app.models import baas as baas_models  # noqa: F401
 from app.core.security import get_password_hash
 from app.routers import auth, banking, admin, cards, notifications, payments, baas
 import random
 import string
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 
 def generate_account_number() -> str:
     return "".join(random.choices(string.digits, k=12))
+
+
+def _seed_demo_activity(db, demo: User, checking: Account):
+    """Idempotent sample activity for the demo customer."""
+    now = datetime.now(timezone.utc)
+
+    tx_count = db.query(Transaction).filter(Transaction.user_id == demo.id).count()
+    if tx_count == 0:
+        samples = [
+            Transaction(
+                user_id=demo.id,
+                account_id=checking.id,
+                amount=3200.0,
+                currency="USD",
+                type=TransactionType.DEPOSIT,
+                status=TransactionStatus.COMPLETED,
+                description="Payroll — Acme Corp",
+                reference="TXN-PAYROLL001",
+                is_flagged=False,
+                fraud_score=0.0,
+                created_at=now - timedelta(days=12),
+            ),
+            Transaction(
+                user_id=demo.id,
+                account_id=checking.id,
+                amount=84.5,
+                currency="USD",
+                type=TransactionType.TRANSFER_OUT,
+                status=TransactionStatus.COMPLETED,
+                description="Transfer to •••• 2201",
+                reference="TXN-OUT000002",
+                is_flagged=False,
+                fraud_score=0.12,
+                created_at=now - timedelta(days=5),
+            ),
+            Transaction(
+                user_id=demo.id,
+                account_id=checking.id,
+                amount=45.99,
+                currency="USD",
+                type=TransactionType.PAYMENT,
+                status=TransactionStatus.COMPLETED,
+                description="Card · Everyday · CLOUDFLARE",
+                reference="TXN-CARD000004",
+                is_flagged=False,
+                fraud_score=0.05,
+                created_at=now - timedelta(days=3),
+            ),
+            Transaction(
+                user_id=demo.id,
+                account_id=checking.id,
+                amount=128.40,
+                currency="USD",
+                type=TransactionType.PAYMENT,
+                status=TransactionStatus.COMPLETED,
+                description="Card · Everyday · WHOLE FOODS",
+                reference="TXN-CARD000005",
+                is_flagged=False,
+                fraud_score=0.04,
+                created_at=now - timedelta(days=2),
+            ),
+            Transaction(
+                user_id=demo.id,
+                account_id=checking.id,
+                amount=2500.0,
+                currency="USD",
+                type=TransactionType.TRANSFER_OUT,
+                status=TransactionStatus.FLAGGED,
+                description="Large transfer — review",
+                reference="TXN-FLAG000003",
+                is_flagged=True,
+                fraud_score=0.72,
+                created_at=now - timedelta(hours=6),
+            ),
+            Transaction(
+                user_id=demo.id,
+                account_id=checking.id,
+                amount=18.0,
+                currency="USD",
+                type=TransactionType.PAYMENT,
+                status=TransactionStatus.COMPLETED,
+                description="Card · Everyday · NETFLIX",
+                reference="TXN-CARD000006",
+                is_flagged=False,
+                fraud_score=0.02,
+                created_at=now - timedelta(hours=2),
+            ),
+        ]
+        db.add_all(samples)
+
+    goal_count = db.query(SavingsGoal).filter(SavingsGoal.user_id == demo.id).count()
+    if goal_count == 0:
+        db.add_all(
+            [
+                SavingsGoal(
+                    user_id=demo.id,
+                    name="Emergency fund",
+                    target_amount=10000.0,
+                    current_amount=4200.0,
+                    deadline=now + timedelta(days=180),
+                ),
+                SavingsGoal(
+                    user_id=demo.id,
+                    name="Tokyo trip",
+                    target_amount=3000.0,
+                    current_amount=900.0,
+                    deadline=now + timedelta(days=90),
+                ),
+            ]
+        )
+
+    notif_count = db.query(Notification).filter(Notification.user_id == demo.id).count()
+    if notif_count == 0:
+        db.add_all(
+            [
+                Notification(
+                    user_id=demo.id,
+                    title="Transfer under review",
+                    message="Your transfer of $2,500.00 was flagged (high amount). Ref: TXN-FLAG000003",
+                    type="fraud",
+                    is_read=False,
+                    created_at=now - timedelta(hours=6),
+                ),
+                Notification(
+                    user_id=demo.id,
+                    title="Money received",
+                    message="You received $3,200.00 from Acme Corp. Ref: TXN-PAYROLL001",
+                    type="transfer",
+                    is_read=True,
+                    created_at=now - timedelta(days=12),
+                ),
+                Notification(
+                    user_id=demo.id,
+                    title="Card payment",
+                    message="$45.99 charged to Everyday •••• 4242 at CLOUDFLARE",
+                    type="card",
+                    is_read=True,
+                    created_at=now - timedelta(days=3),
+                ),
+            ]
+        )
 
 
 def seed_database():
@@ -92,9 +246,13 @@ def seed_database():
             db.add(card)
 
             from app.models.baas import (
-                DepositAccount, DepositProduct, AccountStatus,
-                CreditAccount, CreditAccountStatus,
+                DepositAccount,
+                DepositProduct,
+                AccountStatus,
+                CreditAccount,
+                CreditAccountStatus,
             )
+
             dep = DepositAccount(
                 user_id=demo.id,
                 name="Alex Rivera Checking",
@@ -135,6 +293,20 @@ def seed_database():
                 available=5000.00,
             )
             db.add_all([dep, wallet, credit])
+            db.flush()
+
+        # Always top up activity if missing (works for existing Neon demo user)
+        if demo:
+            checking = (
+                db.query(Account)
+                .filter(
+                    Account.user_id == demo.id,
+                    Account.account_type == AccountType.CHECKING,
+                )
+                .first()
+            )
+            if checking:
+                _seed_demo_activity(db, demo, checking)
 
         db.commit()
         print("Database seeded")
@@ -207,3 +379,10 @@ def health():
             else "ok"
         ),
     }
+
+
+@app.post("/admin/reseed-demo")
+def reseed_demo():
+    """Force reseed demo activity (safe for empty activity tables)."""
+    seed_database()
+    return {"ok": True, "message": "Demo activity ensured"}
