@@ -65,7 +65,6 @@ export function setAuthToken(token: string | null) {
   }
 }
 
-/** Call once on app/dashboard boot so axios always has the header. */
 export function hydrateAuthFromStorage() {
   const token = readToken();
   if (token && token !== "demo-token") {
@@ -131,6 +130,8 @@ function networkMessage(err: any): string {
 
 export async function login(email: string, password: string) {
   try {
+    // Clear demo flag first — must NOT wipe real tokens afterward
+    exitDemoMode();
     const { data } = await api.post("/auth/login/json", { email, password });
     if (!data?.access_token) {
       throw new Error("Login response missing access_token");
@@ -142,7 +143,6 @@ export async function login(email: string, password: string) {
     } catch {
       /* */
     }
-    exitDemoMode();
     return data;
   } catch (err: any) {
     const e = new Error(networkMessage(err)) as any;

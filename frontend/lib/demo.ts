@@ -8,18 +8,39 @@ export const DEMO_FLAG = "modernbank_demo_mode";
 
 export function isDemoMode(): boolean {
   if (typeof window === "undefined") return false;
-  return localStorage.getItem(DEMO_FLAG) === "1";
+  try {
+    return localStorage.getItem(DEMO_FLAG) === "1";
+  } catch {
+    return false;
+  }
 }
 
 export function enterDemoMode() {
-  localStorage.setItem(DEMO_FLAG, "1");
-  localStorage.setItem("access_token", "demo-token");
+  try {
+    localStorage.setItem(DEMO_FLAG, "1");
+    localStorage.setItem("access_token", "demo-token");
+    sessionStorage.setItem(DEMO_FLAG, "1");
+    sessionStorage.setItem("access_token", "demo-token");
+  } catch {
+    /* storage blocked */
+  }
 }
 
+/** Only clears the demo flag — never touches real JWT tokens. */
 export function exitDemoMode() {
-  localStorage.removeItem(DEMO_FLAG);
-  localStorage.removeItem("access_token");
-  localStorage.removeItem("refresh_token");
+  try {
+    localStorage.removeItem(DEMO_FLAG);
+    sessionStorage.removeItem(DEMO_FLAG);
+    // If the token is the placeholder demo token, clear it; leave real JWTs alone
+    if (localStorage.getItem("access_token") === "demo-token") {
+      localStorage.removeItem("access_token");
+    }
+    if (sessionStorage.getItem("access_token") === "demo-token") {
+      sessionStorage.removeItem("access_token");
+    }
+  } catch {
+    /* storage blocked */
+  }
 }
 
 export const demoUser = {
@@ -135,13 +156,15 @@ export const demoDashboard = {
 export const demoInsights = [
   {
     title: "Idle cash opportunity",
-    message: "You have $12,500 in savings. Consider a high-yield allocation for amounts above your emergency fund.",
+    message:
+      "You have $12,500 in savings. Consider a high-yield allocation for amounts above your emergency fund.",
     category: "investment",
     confidence: 0.78,
   },
   {
     title: "One transfer under review",
-    message: "A $2,500 outbound transfer was flagged (high amount + velocity). It will clear after review in the live API.",
+    message:
+      "A $2,500 outbound transfer was flagged (high amount + velocity). It will clear after review in the live API.",
     category: "spending",
     confidence: 0.9,
   },
