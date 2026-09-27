@@ -32,27 +32,65 @@ export const api = axios.create({
   timeout: 20000,
 });
 
-function readToken(): string | null {
+const TOKEN_KEY = "access_token";
+const REFRESH_KEY = "refresh_token";
+
+export function readToken(): string | null {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem("access_token");
+  try {
+    return (
+      sessionStorage.getItem(TOKEN_KEY) ||
+      localStorage.getItem(TOKEN_KEY) ||
+      null
+    );
+  } catch {
+    return null;
+  }
 }
 
 export function setAuthToken(token: string | null) {
   if (typeof window === "undefined") return;
-  if (token) {
-    localStorage.setItem("access_token", token);
-    api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-  } else {
-    localStorage.removeItem("access_token");
-    delete api.defaults.headers.common["Authorization"];
+  try {
+    if (token) {
+      sessionStorage.setItem(TOKEN_KEY, token);
+      localStorage.setItem(TOKEN_KEY, token);
+      api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+    } else {
+      sessionStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(TOKEN_KEY);
+      delete api.defaults.headers.common["Authorization"];
+    }
+  } catch {
+    /* private mode */
   }
+}
+
+/** Call once on app/dashboard boot so axios always has the header. */
+export function hydrateAuthFromStorage() {
+  const token = readToken();
+  if (token && token !== "demo-token") {
+    api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+    return token;
+  }
+  return null;
+}
+
+if (typeof window !== "undefined") {
+  hydrateAuthFromStorage();
 }
 
 api.interceptors.request.use((config) => {
   const token = readToken();
   if (token && token !== "demo-token") {
-    config.headers = config.headers || {};
-    config.headers.Authorization = `Bearer ${token}`;
+    const headers = config.headers as any;
+    if (headers && typeof headers.set === "function") {
+      headers.set("Authorization", `Bearer ${token}`);
+    } else {
+      config.headers = {
+        ...(config.headers as any),
+        Authorization: `Bearer ${token}`,
+      } as any;
+    }
   }
   return config;
 });
@@ -66,10 +104,14 @@ api.interceptors.response.use(
       !isDemoMode()
     ) {
       const path = window.location.pathname;
-      // Never silent-bounce during auth pages — show the error instead
       if (!path.includes("/login") && !path.includes("/register")) {
         setAuthToken(null);
-        localStorage.removeItem("refresh_token");
+        try {
+          localStorage.removeItem(REFRESH_KEY);
+          sessionStorage.removeItem(REFRESH_KEY);
+        } catch {
+          /* */
+        }
         window.location.href = "/login";
       }
     }
@@ -90,8 +132,16 @@ function networkMessage(err: any): string {
 export async function login(email: string, password: string) {
   try {
     const { data } = await api.post("/auth/login/json", { email, password });
+    if (!data?.access_token) {
+      throw new Error("Login response missing access_token");
+    }
     setAuthToken(data.access_token);
-    localStorage.setItem("refresh_token", data.refresh_token);
+    try {
+      localStorage.setItem(REFRESH_KEY, data.refresh_token);
+      sessionStorage.setItem(REFRESH_KEY, data.refresh_token);
+    } catch {
+      /* */
+    }
     exitDemoMode();
     return data;
   } catch (err: any) {
@@ -117,6 +167,7 @@ export async function getMe() {
     const email = localStorage.getItem("demo_role") === "admin" ? demoAdmin.email : demoUser.email;
     return email.startsWith("admin") ? demoAdmin : demoUser;
   }
+  hydrateAuthFromStorage();
   const { data } = await api.get("/auth/me");
   return data;
 }
@@ -124,19 +175,26 @@ export async function getMe() {
 export function logout() {
   exitDemoMode();
   setAuthToken(null);
-  localStorage.removeItem("refresh_token");
-  localStorage.removeItem("demo_role");
+  try {
+    localStorage.removeItem(REFRESH_KEY);
+    sessionStorage.removeItem(REFRESH_KEY);
+    localStorage.removeItem("demo_role");
+  } catch {
+    /* */
+  }
   if (typeof window !== "undefined") window.location.href = "/login";
 }
 
 export async function getDashboard() {
   if (isDemoMode()) return demoDashboard;
+  hydrateAuthFromStorage();
   const { data } = await api.get("/banking/dashboard");
   return data;
 }
 
 export async function getAccounts() {
   if (isDemoMode()) return demoAccounts;
+  hydrateAuthFromStorage();
   const { data } = await api.get("/banking/accounts");
   return data;
 }
@@ -159,12 +217,14 @@ export async function transfer(payload: {
       description: payload.description,
     };
   }
+  hydrateAuthFromStorage();
   const { data } = await api.post("/banking/transfer", payload);
   return data;
 }
 
 export async function getTransactions(accountId?: number, limit = 50) {
   if (isDemoMode()) return demoTransactions;
+  hydrateAuthFromStorage();
   const params: any = { limit };
   if (accountId) params.account_id = accountId;
   const { data } = await api.get("/banking/transactions", { params });
@@ -173,12 +233,14 @@ export async function getTransactions(accountId?: number, limit = 50) {
 
 export async function getInsights() {
   if (isDemoMode()) return demoInsights;
+  hydrateAuthFromStorage();
   const { data } = await api.get("/banking/insights");
   return data;
 }
 
 export async function getGoals() {
   if (isDemoMode()) return demoGoals;
+  hydrateAuthFromStorage();
   const { data } = await api.get("/banking/goals");
   return data;
 }
@@ -191,30 +253,35 @@ export async function createGoal(payload: {
   if (isDemoMode()) {
     return { id: Date.now(), current_amount: 0, ...payload };
   }
+  hydrateAuthFromStorage();
   const { data } = await api.post("/banking/goals", payload);
   return data;
 }
 
 export async function getAdminStats() {
   if (isDemoMode()) return demoAdminStats;
+  hydrateAuthFromStorage();
   const { data } = await api.get("/admin/stats");
   return data;
 }
 
 export async function getAdminUsers() {
   if (isDemoMode()) return demoAdminUsers;
+  hydrateAuthFromStorage();
   const { data } = await api.get("/admin/users");
   return data;
 }
 
 export async function getFlaggedTransactions() {
   if (isDemoMode()) return demoTransactions.filter((t) => t.is_flagged);
+  hydrateAuthFromStorage();
   const { data } = await api.get("/admin/transactions/flagged");
   return data;
 }
 
 export async function getCards() {
   if (isDemoMode()) return demoCards;
+  hydrateAuthFromStorage();
   const { data } = await api.get("/cards");
   return data;
 }
@@ -239,30 +306,35 @@ export async function createCard(payload: {
       label: payload.label || "Virtual",
     };
   }
+  hydrateAuthFromStorage();
   const { data } = await api.post("/cards", payload);
   return data;
 }
 
 export async function freezeCard(cardId: number) {
   if (isDemoMode()) return { id: cardId, status: "frozen" };
+  hydrateAuthFromStorage();
   const { data } = await api.post(`/cards/${cardId}/freeze`);
   return data;
 }
 
 export async function unfreezeCard(cardId: number) {
   if (isDemoMode()) return { id: cardId, status: "active" };
+  hydrateAuthFromStorage();
   const { data } = await api.post(`/cards/${cardId}/unfreeze`);
   return data;
 }
 
 export async function getNotifications(limit = 30) {
   if (isDemoMode()) return demoNotifications;
+  hydrateAuthFromStorage();
   const { data } = await api.get("/notifications", { params: { limit } });
   return data;
 }
 
 export async function markNotificationsRead(ids?: number[]) {
   if (isDemoMode()) return { ok: true };
+  hydrateAuthFromStorage();
   const { data } = await api.post("/notifications/read", ids ?? null);
   return data;
 }
@@ -273,6 +345,7 @@ export function getWsUrl(): string {
 
 export async function getPaymentConfig() {
   if (isDemoMode()) return { enabled: false };
+  hydrateAuthFromStorage();
   const { data } = await api.get("/payments/config");
   return data;
 }
@@ -282,6 +355,7 @@ export async function createDepositIntent(payload: {
   amount: number;
   currency?: string;
 }) {
+  hydrateAuthFromStorage();
   const { data } = await api.post("/payments/deposit-intent", payload);
   return data;
 }
@@ -295,6 +369,7 @@ export async function getBaasDashboard() {
       credit_accounts: 1,
     };
   }
+  hydrateAuthFromStorage();
   const { data } = await api.get("/baas/dashboard");
   return data;
 }
@@ -320,49 +395,58 @@ export async function listBaasAccounts() {
       },
     ];
   }
+  hydrateAuthFromStorage();
   const { data } = await api.get("/baas/accounts");
   return data;
 }
 
 export async function openBaasAccount(payload: any) {
+  hydrateAuthFromStorage();
   const { data } = await api.post("/baas/accounts", payload);
   return data;
 }
 
 export async function createBaasPayment(payload: any) {
+  hydrateAuthFromStorage();
   const { data } = await api.post("/baas/payments", payload);
   return data;
 }
 
 export async function listBaasPayments(limit = 50) {
   if (isDemoMode()) return [];
+  hydrateAuthFromStorage();
   const { data } = await api.get("/baas/payments", { params: { limit } });
   return data;
 }
 
 export async function listBaasCards() {
   if (isDemoMode()) return [];
+  hydrateAuthFromStorage();
   const { data } = await api.get("/baas/cards");
   return data;
 }
 
 export async function issueBaasCard(payload: any) {
+  hydrateAuthFromStorage();
   const { data } = await api.post("/baas/cards", payload);
   return data;
 }
 
 export async function toggleBaasCardFreeze(cardId: number) {
+  hydrateAuthFromStorage();
   const { data } = await api.post(`/baas/cards/${cardId}/toggle-freeze`);
   return data;
 }
 
 export async function listCreditAccounts() {
   if (isDemoMode()) return [];
+  hydrateAuthFromStorage();
   const { data } = await api.get("/baas/credit-accounts");
   return data;
 }
 
 export async function openCreditAccount(payload: any) {
+  hydrateAuthFromStorage();
   const { data } = await api.post("/baas/credit-accounts", payload);
   return data;
 }

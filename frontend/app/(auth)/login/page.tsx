@@ -1,14 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { login, getApiBase } from "@/lib/api";
+import { login, getApiBase, readToken } from "@/lib/api";
 import { useUserStore } from "@/lib/store";
 import { enterDemoMode, demoUser, demoAdmin } from "@/lib/demo";
 
 export default function LoginPage() {
-  const router = useRouter();
   const setUser = useUserStore((s) => s.setUser);
   const [email, setEmail] = useState("demo@modernbank.dev");
   const [password, setPassword] = useState("Demo1234!");
@@ -27,24 +25,33 @@ export default function LoginPage() {
       if (!me) {
         throw new Error("Login succeeded but no user returned. Redeploy the API.");
       }
+      // Verify token actually stuck in storage before navigating
+      const stored = readToken();
+      if (!stored) {
+        throw new Error(
+          "Could not save session (browser storage blocked). Allow cookies/storage for this site and try again."
+        );
+      }
       setUser(me);
-      // Full navigation so axios defaults + storage are used on a fresh page load
-      window.location.href = me.role === "admin" ? "/admin" : "/dashboard";
+      window.location.assign(me.role === "admin" ? "/admin" : "/dashboard");
     } catch (err: any) {
       const msg = err?.message || "Login failed";
       setError(msg);
       if (err?.isNetwork) setShowOffline(true);
-    } finally {
       setLoading(false);
     }
   }
 
   function startOffline(role: "customer" | "admin") {
     enterDemoMode();
-    localStorage.setItem("demo_role", role);
+    try {
+      localStorage.setItem("demo_role", role);
+    } catch {
+      /* */
+    }
     const user = role === "admin" ? demoAdmin : demoUser;
     setUser(user);
-    window.location.href = role === "admin" ? "/admin" : "/dashboard";
+    window.location.assign(role === "admin" ? "/admin" : "/dashboard");
   }
 
   return (

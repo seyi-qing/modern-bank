@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getMe } from "@/lib/api";
+import { getMe, hydrateAuthFromStorage, readToken } from "@/lib/api";
 import { useUserStore } from "@/lib/store";
 import { isDemoMode } from "@/lib/demo";
 import Sidebar from "@/components/layout/Sidebar";
@@ -11,21 +11,35 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const router = useRouter();
   const { user, setUser } = useUserStore();
   const [demo, setDemo] = useState(false);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     setDemo(isDemoMode());
-    const token =
-      typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+
+    const token = hydrateAuthFromStorage() || readToken();
     if (!token) {
       router.replace("/login");
       return;
     }
+
     getMe()
-      .then((me) => setUser(me))
-      .catch(() => router.replace("/login"));
+      .then((me) => {
+        if (!cancelled) {
+          setUser(me);
+          setReady(true);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) router.replace("/login");
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [router, setUser]);
 
-  if (!user) {
+  if (!ready || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-surface-950">
         <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
