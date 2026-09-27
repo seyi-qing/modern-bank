@@ -1,0 +1,9 @@
+[project]
+name = "modern-bank-api"
+version = "1.4.0"
+description = "ModernBank FastAPI backend"
+requires-python = ">=3.11"
+
+# Used when Vercel Root Directory is the repo root (./)
+[tool.vercel]
+entrypoint = "backend.app.main:app"
