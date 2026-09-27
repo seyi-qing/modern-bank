@@ -27,7 +27,9 @@ export default function LoginPage() {
       setUser(me);
       router.push(me.role === "admin" ? "/admin" : "/dashboard");
     } catch (err: any) {
-      setError(err?.message || "Login failed");
+      const msg = err?.message || "Login failed";
+      setError(msg);
+      // Only suggest offline when the API truly cannot be reached
       if (err?.isNetwork) setShowOffline(true);
     } finally {
       setLoading(false);
@@ -96,13 +98,11 @@ export default function LoginPage() {
           </p>
         </form>
 
-        {(showOffline || error) && (
+        {showOffline && (
           <div className="mt-4 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
             <p className="text-sm text-amber-100/90 leading-relaxed">
               <strong className="text-amber-200">Backend not reachable.</strong>{" "}
-              The Vercel frontend needs a deployed FastAPI API and{" "}
-              <code className="text-amber-300">NEXT_PUBLIC_API_URL</code>. Until then,
-              explore the product offline:
+              Check the API URL and that the FastAPI project is deployed.
             </p>
             <div className="flex flex-col sm:flex-row gap-2">
               <button
@@ -128,6 +128,14 @@ export default function LoginPage() {
           <Link href="/register" className="text-brand-400 hover:underline">
             Register
           </Link>
+          {" · "}
+          <button
+            type="button"
+            onClick={() => startOffline("customer")}
+            className="text-slate-400 hover:text-white underline-offset-2 hover:underline"
+          >
+            Offline demo
+          </button>
         </p>
       </div>
     </div>
