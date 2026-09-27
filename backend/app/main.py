@@ -157,9 +157,12 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+origins = settings.cors_list()
+# Allow any *.vercel.app preview in demo deployments
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=origins,
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
