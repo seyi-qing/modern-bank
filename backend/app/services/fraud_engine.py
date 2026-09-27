@@ -1,5 +1,5 @@
 """
-Sophisticated (still heuristic) fraud scoring engine.
+Heuristic fraud scoring engine — deterministic (no random jitter).
 """
 
 from datetime import datetime, timezone, timedelta
@@ -8,7 +8,6 @@ from sqlalchemy import func
 from app.models.user import Transaction, TransactionType, TransactionStatus, User, Account
 from dataclasses import dataclass, field
 from typing import List
-import random
 
 
 @dataclass
@@ -69,7 +68,11 @@ class FraudEngine:
             .filter(
                 Transaction.user_id == user.id,
                 Transaction.created_at >= one_hour,
-                Transaction.type.in_([TransactionType.TRANSFER_OUT, TransactionType.PAYMENT, TransactionType.CARD_PAYMENT]),
+                Transaction.type.in_([
+                    TransactionType.TRANSFER_OUT,
+                    TransactionType.PAYMENT,
+                    TransactionType.CARD_PAYMENT,
+                ]),
             )
             .scalar()
             or 0
@@ -96,7 +99,10 @@ class FraudEngine:
             score += 0.25
             reasons.append("24h volume limit approach")
 
-        account_age_days = (now - from_account.created_at.replace(tzinfo=timezone.utc)).days if from_account.created_at.tzinfo is None else (now - from_account.created_at).days
+        created = from_account.created_at
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        account_age_days = (now - created).days
         if account_age_days < 1:
             score += 0.25
             reasons.append("Brand-new account")
@@ -124,7 +130,6 @@ class FraudEngine:
                 score += 0.12
                 reasons.append("First large transfer to this recipient")
 
-        score += random.uniform(0.0, 0.05)
         score = min(score, 1.0)
         flagged = score >= self.FLAG_THRESHOLD
         if flagged and not reasons:

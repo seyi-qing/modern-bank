@@ -1,5 +1,5 @@
 """
-Core banking logic: transfers, balance updates, fraud scoring, cards, insights.
+Core banking logic: transfers (row-locked), balance updates, fraud scoring, cards, insights.
 """
 
 from datetime import datetime, timezone, timedelta
@@ -26,24 +26,45 @@ def get_account_by_number(db: Session, account_number: str) -> Account | None:
 
 
 def transfer_funds(db: Session, user: User, data: TransferRequest) -> Transaction:
+    """Debit/credit with FOR UPDATE locks so concurrent transfers cannot double-spend."""
     if data.amount <= 0:
         raise HTTPException(status_code=400, detail="Amount must be positive")
     if data.amount > settings.MAX_TRANSFER_AMOUNT:
-        raise HTTPException(status_code=400, detail=f"Amount exceeds maximum of {settings.MAX_TRANSFER_AMOUNT}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Amount exceeds maximum of {settings.MAX_TRANSFER_AMOUNT}",
+        )
 
-    from_acc = db.query(Account).filter(
-        Account.id == data.from_account_id, Account.user_id == user.id, Account.is_active == True
-    ).first()
+    from_acc = (
+        db.query(Account)
+        .filter(
+            Account.id == data.from_account_id,
+            Account.user_id == user.id,
+            Account.is_active == True,
+        )
+        .with_for_update()
+        .first()
+    )
     if not from_acc:
         raise HTTPException(status_code=404, detail="Source account not found")
-    if from_acc.balance < data.amount:
-        raise HTTPException(status_code=400, detail="Insufficient funds")
 
-    to_acc = get_account_by_number(db, data.to_account_number)
+    to_acc = (
+        db.query(Account)
+        .filter(Account.account_number == data.to_account_number, Account.is_active == True)
+        .with_for_update()
+        .first()
+    )
     if not to_acc:
-        raise HTTPException(status_code=404, detail="Destination account not found. Only internal accounts supported in demo.")
+        raise HTTPException(
+            status_code=404,
+            detail="Destination account not found. Only internal accounts supported in demo.",
+        )
     if to_acc.id == from_acc.id:
         raise HTTPException(status_code=400, detail="Cannot transfer to the same account")
+
+    # Re-check balance under lock
+    if from_acc.balance < data.amount:
+        raise HTTPException(status_code=400, detail="Insufficient funds")
 
     engine = FraudEngine(db)
     fraud = engine.score_transfer(user, data.amount, from_acc, to_acc)
@@ -68,32 +89,38 @@ def transfer_funds(db: Session, user: User, data: TransferRequest) -> Transactio
     if not fraud.is_flagged:
         from_acc.balance = round(from_acc.balance - data.amount, 2)
         to_acc.balance = round(to_acc.balance + data.amount, 2)
-        db.add(Transaction(
-            user_id=to_acc.user_id,
-            account_id=to_acc.id,
-            counterparty_account_id=from_acc.id,
-            amount=data.amount,
-            currency=to_acc.currency,
-            type=TransactionType.TRANSFER_IN,
-            status=TransactionStatus.COMPLETED,
-            description=f"Transfer from {from_acc.account_number[-4:]}",
-            reference=ref,
-            is_flagged=False,
-            fraud_score=0.0,
-        ))
-        db.add(Notification(
-            user_id=to_acc.user_id,
-            title="Money received",
-            message=f"You received ${data.amount:.2f} from {user.full_name}. Ref: {ref}",
-            type="transfer",
-        ))
+        db.add(
+            Transaction(
+                user_id=to_acc.user_id,
+                account_id=to_acc.id,
+                counterparty_account_id=from_acc.id,
+                amount=data.amount,
+                currency=to_acc.currency,
+                type=TransactionType.TRANSFER_IN,
+                status=TransactionStatus.COMPLETED,
+                description=f"Transfer from {from_acc.account_number[-4:]}",
+                reference=ref,
+                is_flagged=False,
+                fraud_score=0.0,
+            )
+        )
+        db.add(
+            Notification(
+                user_id=to_acc.user_id,
+                title="Money received",
+                message=f"You received ${data.amount:.2f} from {user.full_name}. Ref: {ref}",
+                type="transfer",
+            )
+        )
     else:
-        db.add(Notification(
-            user_id=user.id,
-            title="Transfer under review",
-            message=f"Your transfer of ${data.amount:.2f} was flagged ({reason_str}). Ref: {ref}",
-            type="fraud",
-        ))
+        db.add(
+            Notification(
+                user_id=user.id,
+                title="Transfer under review",
+                message=f"Your transfer of ${data.amount:.2f} was flagged ({reason_str}). Ref: {ref}",
+                type="fraud",
+            )
+        )
 
     db.commit()
     db.refresh(out_tx)
@@ -101,6 +128,7 @@ def transfer_funds(db: Session, user: User, data: TransferRequest) -> Transactio
     try:
         import asyncio
         from app.services.ws_manager import manager
+
         payload = {
             "type": "notification",
             "title": "Transfer flagged" if fraud.is_flagged else "Transfer completed",
@@ -112,11 +140,16 @@ def transfer_funds(db: Session, user: User, data: TransferRequest) -> Transactio
         if loop.is_running():
             asyncio.create_task(manager.send_personal(user.id, payload))
             if not fraud.is_flagged:
-                asyncio.create_task(manager.send_personal(to_acc.user_id, {
-                    "type": "notification",
-                    "title": "Money received",
-                    "message": f"${data.amount:.2f} from {user.full_name}",
-                }))
+                asyncio.create_task(
+                    manager.send_personal(
+                        to_acc.user_id,
+                        {
+                            "type": "notification",
+                            "title": "Money received",
+                            "message": f"${data.amount:.2f} from {user.full_name}",
+                        },
+                    )
+                )
     except Exception:
         pass
 
@@ -127,26 +160,46 @@ def get_dashboard(db: Session, user: User) -> dict:
     accounts = get_user_accounts(db, user.id)
     total_balance = sum(a.balance for a in accounts)
     recent = (
-        db.query(Transaction).filter(Transaction.user_id == user.id)
-        .order_by(Transaction.created_at.desc()).limit(10).all()
+        db.query(Transaction)
+        .filter(Transaction.user_id == user.id)
+        .order_by(Transaction.created_at.desc())
+        .limit(10)
+        .all()
     )
     thirty_days = datetime.now(timezone.utc) - timedelta(days=30)
-    spending = db.query(func.coalesce(func.sum(Transaction.amount), 0.0)).filter(
-        Transaction.user_id == user.id,
-        Transaction.created_at >= thirty_days,
-        Transaction.type.in_([TransactionType.TRANSFER_OUT, TransactionType.PAYMENT, TransactionType.WITHDRAWAL]),
-        Transaction.status == TransactionStatus.COMPLETED,
-    ).scalar()
-    income = db.query(func.coalesce(func.sum(Transaction.amount), 0.0)).filter(
-        Transaction.user_id == user.id,
-        Transaction.created_at >= thirty_days,
-        Transaction.type.in_([TransactionType.TRANSFER_IN, TransactionType.DEPOSIT, TransactionType.INTEREST]),
-        Transaction.status == TransactionStatus.COMPLETED,
-    ).scalar()
+    spending = (
+        db.query(func.coalesce(func.sum(Transaction.amount), 0.0))
+        .filter(
+            Transaction.user_id == user.id,
+            Transaction.created_at >= thirty_days,
+            Transaction.type.in_([
+                TransactionType.TRANSFER_OUT,
+                TransactionType.PAYMENT,
+                TransactionType.WITHDRAWAL,
+            ]),
+            Transaction.status == TransactionStatus.COMPLETED,
+        )
+        .scalar()
+    )
+    income = (
+        db.query(func.coalesce(func.sum(Transaction.amount), 0.0))
+        .filter(
+            Transaction.user_id == user.id,
+            Transaction.created_at >= thirty_days,
+            Transaction.type.in_([
+                TransactionType.TRANSFER_IN,
+                TransactionType.DEPOSIT,
+                TransactionType.INTEREST,
+            ]),
+            Transaction.status == TransactionStatus.COMPLETED,
+        )
+        .scalar()
+    )
     goals = db.query(SavingsGoal).filter(SavingsGoal.user_id == user.id).all()
     progress = (
         sum(g.current_amount / g.target_amount for g in goals if g.target_amount > 0) / len(goals) * 100
-        if goals else 0.0
+        if goals
+        else 0.0
     )
     return {
         "total_balance": round(total_balance, 2),
@@ -163,35 +216,52 @@ def generate_ai_insights(db: Session, user: User) -> list[AIInsight]:
     total = sum(a.balance for a in accounts)
     insights: list[AIInsight] = []
     if total < 500:
-        insights.append(AIInsight(
-            title="Build your emergency fund",
-            message="Your balance is under $500. Consider setting aside $50/week into savings.",
-            category="savings", confidence=0.82,
-        ))
+        insights.append(
+            AIInsight(
+                title="Build your emergency fund",
+                message="Your balance is under $500. Consider setting aside $50/week into savings.",
+                category="savings",
+                confidence=0.82,
+            )
+        )
     elif total > 5000:
-        insights.append(AIInsight(
-            title="Idle cash opportunity",
-            message=f"You have ${total:,.0f} available. Consider high-yield savings.",
-            category="opportunity", confidence=0.75,
-        ))
+        insights.append(
+            AIInsight(
+                title="Idle cash opportunity",
+                message=f"You have ${total:,.0f} available. Consider high-yield savings.",
+                category="investment",
+                confidence=0.75,
+            )
+        )
     thirty_days = datetime.now(timezone.utc) - timedelta(days=30)
-    spending = db.query(func.coalesce(func.sum(Transaction.amount), 0.0)).filter(
-        Transaction.user_id == user.id,
-        Transaction.created_at >= thirty_days,
-        Transaction.type == TransactionType.TRANSFER_OUT,
-    ).scalar() or 0
+    spending = (
+        db.query(func.coalesce(func.sum(Transaction.amount), 0.0))
+        .filter(
+            Transaction.user_id == user.id,
+            Transaction.created_at >= thirty_days,
+            Transaction.type == TransactionType.TRANSFER_OUT,
+        )
+        .scalar()
+        or 0
+    )
     if spending > 2000:
-        insights.append(AIInsight(
-            title="High monthly outflow",
-            message=f"You moved ${spending:,.0f} out in the last 30 days.",
-            category="spending", confidence=0.68,
-        ))
+        insights.append(
+            AIInsight(
+                title="High monthly outflow",
+                message=f"You moved ${spending:,.0f} out in the last 30 days.",
+                category="spending",
+                confidence=0.68,
+            )
+        )
     if not insights:
-        insights.append(AIInsight(
-            title="You're on track",
-            message="Your spending patterns look healthy this month.",
-            category="opportunity", confidence=0.9,
-        ))
+        insights.append(
+            AIInsight(
+                title="You're on track",
+                message="Your spending patterns look healthy this month.",
+                category="general",
+                confidence=0.9,
+            )
+        )
     return insights
 
 
@@ -201,9 +271,15 @@ def get_admin_stats(db: Session) -> dict:
     total_accounts = db.query(func.count(Account.id)).scalar() or 0
     total_balance = db.query(func.coalesce(func.sum(Account.balance), 0.0)).scalar() or 0.0
     one_day = datetime.now(timezone.utc) - timedelta(days=1)
-    volume = db.query(func.coalesce(func.sum(Transaction.amount), 0.0)).filter(
-        Transaction.created_at >= one_day, Transaction.status == TransactionStatus.COMPLETED
-    ).scalar() or 0
+    volume = (
+        db.query(func.coalesce(func.sum(Transaction.amount), 0.0))
+        .filter(
+            Transaction.created_at >= one_day,
+            Transaction.status == TransactionStatus.COMPLETED,
+        )
+        .scalar()
+        or 0
+    )
     flagged = db.query(func.count(Transaction.id)).filter(Transaction.is_flagged == True).scalar() or 0
     new_today = db.query(func.count(User.id)).filter(User.created_at >= one_day).scalar() or 0
     return {
@@ -223,10 +299,19 @@ def _generate_card_number() -> tuple[str, str]:
 
 
 def create_card(db: Session, user: User, data: CardCreate) -> Card:
-    acc = db.query(Account).filter(Account.id == data.account_id, Account.user_id == user.id, Account.is_active == True).first()
+    acc = (
+        db.query(Account)
+        .filter(Account.id == data.account_id, Account.user_id == user.id, Account.is_active == True)
+        .first()
+    )
     if not acc:
         raise HTTPException(status_code=404, detail="Account not found")
-    active_count = db.query(func.count(Card.id)).filter(Card.user_id == user.id, Card.status != CardStatus.CANCELLED).scalar() or 0
+    active_count = (
+        db.query(func.count(Card.id))
+        .filter(Card.user_id == user.id, Card.status != CardStatus.CANCELLED)
+        .scalar()
+        or 0
+    )
     if active_count >= 5:
         raise HTTPException(status_code=400, detail="Maximum of 5 cards reached")
     masked, last4 = _generate_card_number()
@@ -244,7 +329,14 @@ def create_card(db: Session, user: User, data: CardCreate) -> Card:
         label=data.label or ("Virtual" if data.card_type == CardType.VIRTUAL else "Physical"),
     )
     db.add(card)
-    db.add(Notification(user_id=user.id, title="New card issued", message=f"Your {data.card_type.value} card ending in {last4} is ready.", type="card"))
+    db.add(
+        Notification(
+            user_id=user.id,
+            title="New card issued",
+            message=f"Your {data.card_type.value} card ending in {last4} is ready.",
+            type="card",
+        )
+    )
     db.commit()
     db.refresh(card)
     return card
@@ -254,7 +346,14 @@ def list_cards(db: Session, user_id: int) -> list[Card]:
     return db.query(Card).filter(Card.user_id == user_id).order_by(Card.created_at.desc()).all()
 
 
-def update_card(db: Session, user: User, card_id: int, status: CardStatus | None = None, spending_limit: float | None = None, label: str | None = None) -> Card:
+def update_card(
+    db: Session,
+    user: User,
+    card_id: int,
+    status: CardStatus | None = None,
+    spending_limit: float | None = None,
+    label: str | None = None,
+) -> Card:
     card = db.query(Card).filter(Card.id == card_id, Card.user_id == user.id).first()
     if not card:
         raise HTTPException(status_code=404, detail="Card not found")
@@ -262,14 +361,35 @@ def update_card(db: Session, user: User, card_id: int, status: CardStatus | None
         if status == CardStatus.FROZEN and card.status == CardStatus.ACTIVE:
             card.status = CardStatus.FROZEN
             card.frozen_at = datetime.now(timezone.utc)
-            db.add(Notification(user_id=user.id, title="Card frozen", message=f"Card ending in {card.last_four} has been frozen.", type="card"))
+            db.add(
+                Notification(
+                    user_id=user.id,
+                    title="Card frozen",
+                    message=f"Card ending in {card.last_four} has been frozen.",
+                    type="card",
+                )
+            )
         elif status == CardStatus.ACTIVE and card.status == CardStatus.FROZEN:
             card.status = CardStatus.ACTIVE
             card.frozen_at = None
-            db.add(Notification(user_id=user.id, title="Card unfrozen", message=f"Card ending in {card.last_four} is active again.", type="card"))
+            db.add(
+                Notification(
+                    user_id=user.id,
+                    title="Card unfrozen",
+                    message=f"Card ending in {card.last_four} is active again.",
+                    type="card",
+                )
+            )
         elif status == CardStatus.CANCELLED:
             card.status = CardStatus.CANCELLED
-            db.add(Notification(user_id=user.id, title="Card cancelled", message=f"Card ending in {card.last_four} has been cancelled.", type="card"))
+            db.add(
+                Notification(
+                    user_id=user.id,
+                    title="Card cancelled",
+                    message=f"Card ending in {card.last_four} has been cancelled.",
+                    type="card",
+                )
+            )
         else:
             card.status = status
     if spending_limit is not None:
@@ -282,11 +402,19 @@ def update_card(db: Session, user: User, card_id: int, status: CardStatus | None
 
 
 def list_notifications(db: Session, user_id: int, limit: int = 30) -> list[Notification]:
-    return db.query(Notification).filter(Notification.user_id == user_id).order_by(Notification.created_at.desc()).limit(limit).all()
+    return (
+        db.query(Notification)
+        .filter(Notification.user_id == user_id)
+        .order_by(Notification.created_at.desc())
+        .limit(limit)
+        .all()
+    )
 
 
 def mark_notifications_read(db: Session, user_id: int, ids: list[int] | None = None):
-    q = db.query(Notification).filter(Notification.user_id == user_id, Notification.is_read == False)
+    q = db.query(Notification).filter(
+        Notification.user_id == user_id, Notification.is_read == False
+    )
     if ids:
         q = q.filter(Notification.id.in_(ids))
     q.update({"is_read": True})
