@@ -1,22 +1,32 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getAdminStats, getFlaggedTransactions } from "@/lib/api";
+import {
+  getAdminStats,
+  getFlaggedTransactions,
+  getReconciliation,
+} from "@/lib/api";
 import { formatMoney, formatDateTime } from "@/lib/format";
 import { Card, CardTitle } from "@/components/ui/Card";
-import { Shield, Users, Flag, Activity } from "lucide-react";
+import { Shield, Users, Flag, Activity, Scale } from "lucide-react";
 import Link from "next/link";
 
 export default function AdminHome() {
   const [stats, setStats] = useState<any>(null);
   const [flagged, setFlagged] = useState<any[]>([]);
+  const [recon, setRecon] = useState<any>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    Promise.all([getAdminStats(), getFlaggedTransactions()])
-      .then(([s, f]) => {
+    Promise.all([
+      getAdminStats(),
+      getFlaggedTransactions(),
+      getReconciliation().catch(() => null),
+    ])
+      .then(([s, f, r]) => {
         setStats(s);
         setFlagged(Array.isArray(f) ? f : f?.transactions ?? []);
+        setRecon(r);
       })
       .catch(() => setError("Failed to load admin data"));
   }, []);
@@ -49,7 +59,9 @@ export default function AdminHome() {
           <Shield className="w-6 h-6 text-brand-400" />
           System overview
         </h1>
-        <p className="text-sm text-slate-500 mt-1">Ops snapshot for the demo bank</p>
+        <p className="text-sm text-slate-500 mt-1">
+          Ops snapshot · Banking Core v2.1 ledger enabled
+        </p>
       </header>
 
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
@@ -64,11 +76,30 @@ export default function AdminHome() {
         ))}
       </div>
 
+      {recon && (
+        <Card>
+          <div className="flex items-center justify-between mb-2">
+            <CardTitle className="mb-0 flex items-center gap-2">
+              <Scale className="w-4 h-4 text-brand-400" />
+              Ledger reconciliation
+            </CardTitle>
+            <Link href="/admin/reconciliation" className="text-xs text-brand-400">
+              Full report
+            </Link>
+          </div>
+          <p className={`text-sm font-medium ${recon.ok ? "text-emerald-300" : "text-amber-300"}`}>
+            {recon.ok
+              ? `OK — ${recon.accounts_balanced}/${recon.accounts_checked} accounts balanced`
+              : `Drift — ${recon.accounts_out_of_balance} account(s) out of balance`}
+          </p>
+        </Card>
+      )}
+
       <Card>
         <div className="flex items-center justify-between mb-3">
           <CardTitle className="mb-0">Flagged queue</CardTitle>
           <Link href="/admin/flagged" className="text-xs text-brand-400">
-            View all
+            Review all
           </Link>
         </div>
         <ul className="space-y-2">

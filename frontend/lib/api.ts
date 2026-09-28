@@ -1,5 +1,6 @@
 /**
  * API client for ModernBank backend.
+ * Transfers use Banking Core v2.1 (/banking/v2/transfer) with Idempotency-Key.
  */
 
 import axios, { AxiosError } from "axios";
@@ -128,9 +129,16 @@ function networkMessage(err: any): string {
   return err.message || "Request failed";
 }
 
+/** Client-generated key for Idempotency-Key (min 16 chars). */
+export function newIdempotencyKey(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `mb-${Date.now()}-${Math.random().toString(36).slice(2, 12)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
 export async function login(email: string, password: string) {
   try {
-    // Clear demo flag first — must NOT wipe real tokens afterward
     exitDemoMode();
     const { data } = await api.post("/auth/login/json", { email, password });
     if (!data?.access_token) {
@@ -199,11 +207,17 @@ export async function getAccounts() {
   return data;
 }
 
+/**
+ * Banking Core v2.1 transfer — double-entry ledger + Idempotency-Key.
+ * Do not use legacy POST /banking/transfer for new traffic.
+ */
 export async function transfer(payload: {
   from_account_id: number;
   to_account_number: string;
   amount: number;
   description?: string;
+  currency?: string;
+  idempotency_key?: string;
 }) {
   if (isDemoMode()) {
     const flagged = payload.amount >= 2000;
@@ -218,7 +232,18 @@ export async function transfer(payload: {
     };
   }
   hydrateAuthFromStorage();
-  const { data } = await api.post("/banking/transfer", payload);
+  const idempotencyKey = payload.idempotency_key || newIdempotencyKey();
+  const body = {
+    from_account_id: payload.from_account_id,
+    to_account_number: payload.to_account_number,
+    amount: payload.amount,
+    currency: (payload.currency || "USD").toUpperCase(),
+    description: payload.description,
+    idempotency_key: idempotencyKey,
+  };
+  const { data } = await api.post("/banking/v2/transfer", body, {
+    headers: { "Idempotency-Key": idempotencyKey },
+  });
   return data;
 }
 
@@ -276,6 +301,43 @@ export async function getFlaggedTransactions() {
   if (isDemoMode()) return demoTransactions.filter((t) => t.is_flagged);
   hydrateAuthFromStorage();
   const { data } = await api.get("/admin/transactions/flagged");
+  return data;
+}
+
+/** Admin Core v2.1 — approve or reject a flagged transfer (reason min 5 chars). */
+export async function reviewFlaggedTransaction(
+  transactionId: number,
+  action: "approve" | "reject",
+  reason: string
+) {
+  if (isDemoMode()) {
+    return {
+      id: transactionId,
+      status: action === "approve" ? "completed" : "failed",
+      is_flagged: action === "reject",
+    };
+  }
+  hydrateAuthFromStorage();
+  const { data } = await api.post(`/admin/core/transactions/${transactionId}/review`, {
+    action,
+    reason,
+  });
+  return data;
+}
+
+/** Admin Core v2.1 — book vs ledger reconciliation (read-only). */
+export async function getReconciliation() {
+  if (isDemoMode()) {
+    return {
+      accounts_checked: 3,
+      accounts_balanced: 3,
+      accounts_out_of_balance: 0,
+      ok: true,
+      results: [],
+    };
+  }
+  hydrateAuthFromStorage();
+  const { data } = await api.get("/admin/core/reconciliation");
   return data;
 }
 

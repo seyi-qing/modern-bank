@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { getAccounts, transfer } from "@/lib/api";
 import { formatMoney, maskAccount } from "@/lib/format";
-import { Card, CardTitle } from "@/components/ui/Card";
+import { Card } from "@/components/ui/Card";
 import { ArrowLeftRight, AlertTriangle, CheckCircle2 } from "lucide-react";
 
 export default function TransferPage() {
@@ -37,6 +37,7 @@ export default function TransferPage() {
     }
     setLoading(true);
     try {
+      // Banking Core v2.1 — Idempotency-Key generated inside transfer()
       const tx = await transfer({
         from_account_id: Number(fromId),
         to_account_number: toNumber.trim(),
@@ -67,7 +68,8 @@ export default function TransferPage() {
           Transfer
         </h1>
         <p className="text-sm text-slate-500 mt-1">
-          Internal transfers only in this demo. Fraud scoring runs on every send.
+          Ledger-backed internal transfer (Core v2.1). Each send uses a unique
+          Idempotency-Key so retries cannot double-post.
         </p>
       </header>
 
@@ -102,7 +104,7 @@ export default function TransferPage() {
               className="w-full rounded-xl bg-surface-950 border border-white/10 px-3 py-2.5 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-brand-500"
             />
             <p className="text-xs text-slate-600 mt-1">
-              Demo tip: open a second user or use an account number from Admin → Users.
+              Demo tip: use another user&apos;s account number from Admin → Users.
             </p>
           </div>
 

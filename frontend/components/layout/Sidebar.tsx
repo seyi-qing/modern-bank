@@ -6,7 +6,7 @@ import { useUserStore } from "@/lib/store";
 import { logout } from "@/lib/api";
 import {
   LayoutDashboard, ArrowLeftRight, History, Target, Sparkles,
-  Shield, Users, Flag, LogOut, Menu, X, CreditCard, Bell, PlusCircle, Building2,
+  Shield, Users, Flag, LogOut, Menu, X, CreditCard, Bell, PlusCircle, Building2, Scale,
 } from "lucide-react";
 import { useState } from "react";
 import clsx from "clsx";
@@ -27,6 +27,7 @@ const adminLinks = [
   { href: "/admin", label: "System", icon: Shield },
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/flagged", label: "Flagged", icon: Flag },
+  { href: "/admin/reconciliation", label: "Reconciliation", icon: Scale },
 ];
 
 export default function Sidebar() {
