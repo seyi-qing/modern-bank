@@ -1,20 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, hydrateAuthFromStorage, isDemoMode } from "@/lib/api";
+import { getAdminAllTransactions } from "@/lib/api";
 import { formatMoney, formatDateTime } from "@/lib/format";
 import { Card } from "@/components/ui/Card";
 import { History } from "lucide-react";
-
-async function fetchAllTransactions() {
-  if (typeof window !== "undefined") {
-    const { isDemoMode: demo, demoTransactions } = await import("@/lib/demo");
-    if (demo()) return demoTransactions;
-  }
-  hydrateAuthFromStorage();
-  const { data } = await api.get("/admin/transactions", { params: { limit: 100 } });
-  return data;
-}
 
 export default function AdminTransactionsPage() {
   const [txs, setTxs] = useState<any[]>([]);
@@ -23,7 +13,7 @@ export default function AdminTransactionsPage() {
 
   useEffect(() => {
     setLoading(true);
-    fetchAllTransactions()
+    getAdminAllTransactions(100)
       .then((list) => setTxs(Array.isArray(list) ? list : []))
       .catch(() => setError("Failed to load transactions"))
       .finally(() => setLoading(false));
