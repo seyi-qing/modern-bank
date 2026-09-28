@@ -23,8 +23,11 @@ from app.models.user import (
     SavingsGoal,
 )
 from app.models import baas as baas_models  # noqa: F401
+from app.models import ledger as ledger_models  # noqa: F401 — Banking Core v2.1
+from app.models import audit as audit_models  # noqa: F401 — admin audit trail
 from app.core.security import get_password_hash
 from app.routers import auth, banking, admin, cards, notifications, payments, baas
+from app.routers import banking_core_v21, admin_core_v21
 import random
 import string
 from datetime import datetime, timezone, timedelta
@@ -83,19 +86,6 @@ def _seed_demo_activity(db, demo: User, checking: Account):
             Transaction(
                 user_id=demo.id,
                 account_id=checking.id,
-                amount=128.40,
-                currency="USD",
-                type=TransactionType.PAYMENT,
-                status=TransactionStatus.COMPLETED,
-                description="Card · Everyday · WHOLE FOODS",
-                reference="TXN-CARD000005",
-                is_flagged=False,
-                fraud_score=0.04,
-                created_at=now - timedelta(days=2),
-            ),
-            Transaction(
-                user_id=demo.id,
-                account_id=checking.id,
                 amount=2500.0,
                 currency="USD",
                 type=TransactionType.TRANSFER_OUT,
@@ -105,19 +95,6 @@ def _seed_demo_activity(db, demo: User, checking: Account):
                 is_flagged=True,
                 fraud_score=0.72,
                 created_at=now - timedelta(hours=6),
-            ),
-            Transaction(
-                user_id=demo.id,
-                account_id=checking.id,
-                amount=18.0,
-                currency="USD",
-                type=TransactionType.PAYMENT,
-                status=TransactionStatus.COMPLETED,
-                description="Card · Everyday · NETFLIX",
-                reference="TXN-CARD000006",
-                is_flagged=False,
-                fraud_score=0.02,
-                created_at=now - timedelta(hours=2),
             ),
         ]
         db.add_all(samples)
@@ -132,44 +109,6 @@ def _seed_demo_activity(db, demo: User, checking: Account):
                     target_amount=10000.0,
                     current_amount=4200.0,
                     deadline=now + timedelta(days=180),
-                ),
-                SavingsGoal(
-                    user_id=demo.id,
-                    name="Tokyo trip",
-                    target_amount=3000.0,
-                    current_amount=900.0,
-                    deadline=now + timedelta(days=90),
-                ),
-            ]
-        )
-
-    notif_count = db.query(Notification).filter(Notification.user_id == demo.id).count()
-    if notif_count == 0:
-        db.add_all(
-            [
-                Notification(
-                    user_id=demo.id,
-                    title="Transfer under review",
-                    message="Your transfer of $2,500.00 was flagged (high amount). Ref: TXN-FLAG000003",
-                    type="fraud",
-                    is_read=False,
-                    created_at=now - timedelta(hours=6),
-                ),
-                Notification(
-                    user_id=demo.id,
-                    title="Money received",
-                    message="You received $3,200.00 from Acme Corp. Ref: TXN-PAYROLL001",
-                    type="transfer",
-                    is_read=True,
-                    created_at=now - timedelta(days=12),
-                ),
-                Notification(
-                    user_id=demo.id,
-                    title="Card payment",
-                    message="$45.99 charged to Everyday •••• 4242 at CLOUDFLARE",
-                    type="card",
-                    is_read=True,
-                    created_at=now - timedelta(days=3),
                 ),
             ]
         )
@@ -245,64 +184,10 @@ def seed_database():
             )
             db.add(card)
 
-            from app.models.baas import (
-                DepositAccount,
-                DepositProduct,
-                AccountStatus,
-                CreditAccount,
-                CreditAccountStatus,
-            )
-
-            dep = DepositAccount(
-                user_id=demo.id,
-                name="Alex Rivera Checking",
-                status=AccountStatus.OPEN,
-                deposit_product=DepositProduct.CHECKING,
-                routing_number="021000021",
-                account_number="1000000002",
-                currency="USD",
-                balance=10000.00,
-                hold=0.0,
-                available=10000.00,
-                tags={"purpose": "checking"},
-                is_wallet=False,
-            )
-            wallet = DepositAccount(
-                user_id=demo.id,
-                name="Operating Wallet (FBO)",
-                status=AccountStatus.OPEN,
-                deposit_product=DepositProduct.WALLET,
-                routing_number="021000021",
-                account_number="9000000001",
-                currency="USD",
-                balance=2500.00,
-                hold=0.0,
-                available=2500.00,
-                tags={"purpose": "wallet"},
-                is_wallet=True,
-            )
-            credit = CreditAccount(
-                user_id=demo.id,
-                name="Alex Revolving",
-                status=CreditAccountStatus.OPEN,
-                credit_terms="credit_terms_1",
-                currency="USD",
-                credit_limit=5000.00,
-                balance=0.0,
-                hold=0.0,
-                available=5000.00,
-            )
-            db.add_all([dep, wallet, credit])
-            db.flush()
-
-        # Always top up activity if missing (works for existing Neon demo user)
         if demo:
             checking = (
                 db.query(Account)
-                .filter(
-                    Account.user_id == demo.id,
-                    Account.account_type == AccountType.CHECKING,
-                )
+                .filter(Account.user_id == demo.id, Account.account_type == AccountType.CHECKING)
                 .first()
             )
             if checking:
@@ -323,7 +208,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    description="ModernBank – AI-driven cloud-native banking API demo.",
+    description="ModernBank – AI-driven cloud-native banking API demo. Banking Core v2.1 ledger enabled.",
     lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
@@ -336,7 +221,7 @@ app.add_middleware(
     allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*", "Idempotency-Key"],
 )
 
 app.include_router(auth.router, prefix=settings.API_PREFIX)
@@ -346,6 +231,9 @@ app.include_router(cards.router, prefix=settings.API_PREFIX)
 app.include_router(notifications.router, prefix=settings.API_PREFIX)
 app.include_router(payments.router, prefix=settings.API_PREFIX)
 app.include_router(baas.router, prefix=settings.API_PREFIX)
+# Banking Core v2.1 — double-entry transfers + admin reconciliation
+app.include_router(banking_core_v21.router, prefix=settings.API_PREFIX)
+app.include_router(admin_core_v21.router, prefix=settings.API_PREFIX)
 
 
 def _db_kind() -> str:
@@ -365,6 +253,7 @@ def root():
         "docs": "/docs",
         "status": "operational",
         "database": _db_kind(),
+        "banking_core": "v2.1",
     }
 
 
@@ -373,16 +262,5 @@ def health():
     return {
         "status": "healthy",
         "database": _db_kind(),
-        "hint": (
-            "Set DATABASE_URL to a Neon postgresql:// string on Vercel if you see login 200 then /me 401"
-            if _db_kind() == "sqlite"
-            else "ok"
-        ),
+        "banking_core": "v2.1",
     }
-
-
-@app.post("/admin/reseed-demo")
-def reseed_demo():
-    """Force reseed demo activity (safe for empty activity tables)."""
-    seed_database()
-    return {"ok": True, "message": "Demo activity ensured"}
