@@ -1,6 +1,7 @@
 """
 User and related models.
 Role-based access: customer | admin
+Banking Core v2.1: Transaction.idempotency_key for safe retries.
 """
 
 from datetime import datetime, timezone
@@ -117,6 +118,8 @@ class Transaction(Base):
     status: Mapped[TransactionStatus] = mapped_column(SAEnum(TransactionStatus), default=TransactionStatus.COMPLETED)
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
     reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Banking Core v2.1 — unique per user for safe client retries
+    idempotency_key: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True, index=True)
     is_flagged: Mapped[bool] = mapped_column(Boolean, default=False)
     fraud_score: Mapped[float] = mapped_column(Float, default=0.0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
