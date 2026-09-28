@@ -118,8 +118,6 @@ def transfer_v21(db: Session, user: User, data: TransferV21Request) -> Transacti
             message=f"Transfer {tx.reference} is under review. Reason: {'; '.join(fraud.reasons) or 'risk policy'}",
             type="fraud",
         ))
-        db.commit()
-        db.refresh(tx)
         return tx
 
     post_transfer(db, transaction=tx, source=source, destination=destination)
@@ -142,8 +140,6 @@ def transfer_v21(db: Session, user: User, data: TransferV21Request) -> Transacti
         message=f"You received {data.amount:.2f} {data.currency} from {user.full_name}. Ref: {tx.reference}",
         type="transfer",
     ))
-    db.commit()
-    db.refresh(tx)
     return tx
 
 
@@ -165,8 +161,6 @@ def admin_review_transfer(db: Session, transaction_id: int, action: str, reason:
             message=f"Transfer {tx.reference} was rejected: {reason}",
             type="fraud",
         ))
-        db.commit()
-        db.refresh(tx)
         return tx
 
     if not tx.counterparty_account_id:
@@ -200,6 +194,4 @@ def admin_review_transfer(db: Session, transaction_id: int, action: str, reason:
         message=f"A reviewed transfer of {tx.amount:.2f} {tx.currency} has been completed. Ref: {tx.reference}",
         type="transfer",
     ))
-    db.commit()
-    db.refresh(tx)
     return tx
