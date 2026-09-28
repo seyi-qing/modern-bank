@@ -129,7 +129,6 @@ function networkMessage(err: any): string {
   return err.message || "Request failed";
 }
 
-/** Client-generated key for Idempotency-Key (min 16 chars). */
 export function newIdempotencyKey(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
@@ -187,10 +186,14 @@ export function logout() {
     localStorage.removeItem(REFRESH_KEY);
     sessionStorage.removeItem(REFRESH_KEY);
     localStorage.removeItem("demo_role");
+    sessionStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(TOKEN_KEY);
   } catch {
     /* */
   }
-  if (typeof window !== "undefined") window.location.href = "/login";
+  if (typeof window !== "undefined") {
+    window.location.replace("/login");
+  }
 }
 
 export async function getDashboard() {
@@ -207,10 +210,6 @@ export async function getAccounts() {
   return data;
 }
 
-/**
- * Banking Core v2.1 transfer — double-entry ledger + Idempotency-Key.
- * Do not use legacy POST /banking/transfer for new traffic.
- */
 export async function transfer(payload: {
   from_account_id: number;
   to_account_number: string;
@@ -304,7 +303,13 @@ export async function getFlaggedTransactions() {
   return data;
 }
 
-/** Admin Core v2.1 — approve or reject a flagged transfer (reason min 5 chars). */
+export async function getAdminAllTransactions(limit = 100) {
+  if (isDemoMode()) return demoTransactions;
+  hydrateAuthFromStorage();
+  const { data } = await api.get("/admin/transactions", { params: { limit } });
+  return data;
+}
+
 export async function reviewFlaggedTransaction(
   transactionId: number,
   action: "approve" | "reject",
@@ -325,7 +330,6 @@ export async function reviewFlaggedTransaction(
   return data;
 }
 
-/** Admin Core v2.1 — book vs ledger reconciliation (read-only). */
 export async function getReconciliation() {
   if (isDemoMode()) {
     return {
@@ -512,3 +516,6 @@ export async function openCreditAccount(payload: any) {
   const { data } = await api.post("/baas/credit-accounts", payload);
   return data;
 }
+
+// re-export for pages that import isDemoMode from api by mistake
+export { isDemoMode };

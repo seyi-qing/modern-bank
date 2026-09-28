@@ -2,44 +2,39 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getMe, hydrateAuthFromStorage, readToken } from "@/lib/api";
+import { getMe, readToken } from "@/lib/api";
 import { useUserStore } from "@/lib/store";
 import { isDemoMode } from "@/lib/demo";
 import Sidebar from "@/components/layout/Sidebar";
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const router = useRouter();
   const { user, setUser } = useUserStore();
   const [demo, setDemo] = useState(false);
-  const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    let cancelled = false;
     setDemo(isDemoMode());
-
-    const token = hydrateAuthFromStorage() || readToken();
+    const token = readToken();
     if (!token) {
       router.replace("/login");
       return;
     }
-
     getMe()
       .then((me) => {
-        if (!cancelled) {
-          setUser(me);
-          setReady(true);
+        if (me.role === "admin") {
+          router.replace("/admin");
+          return;
         }
+        setUser(me);
       })
-      .catch(() => {
-        if (!cancelled) router.replace("/login");
-      });
-
-    return () => {
-      cancelled = true;
-    };
+      .catch(() => router.replace("/login"));
   }, [router, setUser]);
 
-  if (!ready || !user) {
+  if (!user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-surface-950">
         <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
@@ -56,8 +51,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             Offline demo mode — data is simulated.
           </div>
         )}
-        {/* pt-16 on mobile clears the fixed hamburger button */}
-        <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto pt-16 lg:pt-8">{children}</div>
+        <div className="p-4 pt-16 sm:p-6 lg:p-8 lg:pt-8 max-w-6xl mx-auto">
+          {children}
+        </div>
       </main>
     </div>
   );
