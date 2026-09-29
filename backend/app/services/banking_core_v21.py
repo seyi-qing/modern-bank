@@ -86,7 +86,7 @@ def transfer_v21(db: Session, user: User, data: TransferV21Request) -> Transacti
     if money(source.balance) < money(data.amount):
         raise HTTPException(status_code=400, detail="Insufficient funds")
 
-    fraud = FraudEngine(db).score_transfer(user, float(data.amount), source, destination)
+    fraud = FraudEngine(db).score_transfer(user, data.amount, source, destination)
     tx = Transaction(
         user_id=user.id,
         account_id=source.id,
