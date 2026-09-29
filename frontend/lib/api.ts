@@ -52,7 +52,7 @@ export function setAuthToken(token: string | null) {
 
 export function hydrateAuthFromStorage() {
   const token = readToken();
-  if (token && token !== "demo-token") {
+  if (token) {
     api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
     return token;
   }
@@ -65,7 +65,7 @@ if (typeof window !== "undefined") {
 
 api.interceptors.request.use((config) => {
   const token = readToken();
-  if (token && token !== "demo-token") {
+  if (token) {
     const headers = config.headers as any;
     if (headers && typeof headers.set === "function") {
       headers.set("Authorization", `Bearer ${token}`);
@@ -163,7 +163,6 @@ export function logout() {
   try {
     localStorage.removeItem(REFRESH_KEY);
     sessionStorage.removeItem(REFRESH_KEY);
-    localStorage.removeItem("demo_role");
     sessionStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(TOKEN_KEY);
   } catch {
@@ -301,14 +300,12 @@ export async function createCard(payload: {
 }
 
 export async function freezeCard(cardId: number) {
-  if (isDemoMode()) return { id: cardId, status: "frozen" };
   hydrateAuthFromStorage();
   const { data } = await api.post(`/cards/${cardId}/freeze`);
   return data;
 }
 
 export async function unfreezeCard(cardId: number) {
-  if (isDemoMode()) return { id: cardId, status: "active" };
   hydrateAuthFromStorage();
   const { data } = await api.post(`/cards/${cardId}/unfreeze`);
   return data;
@@ -331,7 +328,6 @@ export function getWsUrl(): string {
 }
 
 export async function getPaymentConfig() {
-  if (isDemoMode()) return { enabled: false };
   hydrateAuthFromStorage();
   const { data } = await api.get("/payments/config");
   return data;
