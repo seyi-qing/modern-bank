@@ -1,9 +1,7 @@
-"""Reconcile the legacy production schema with Banking Core v2.1.
+"""Repair a verified legacy production schema.
 
-This revision repairs a legacy create_all schema that already contains the
-v2.1 ledger tables but lacks Alembic tracking and transfer idempotency.
-
-It does not create/drop business tables or fabricate historical journals.
+This revision is the production repair step after the database has been
+explicitly baselined. It is not a clean-install foundation migration.
 """
 from alembic import op
 import sqlalchemy as sa
@@ -28,8 +26,8 @@ def upgrade():
     missing = required - set(inspector.get_table_names())
     if missing:
         raise RuntimeError(
-            "Production schema repair requires existing Banking Core tables; "
-            f"missing: {', '.join(sorted(missing))}"
+            "Production repair requires the verified existing Banking Core "
+            f"schema; missing: {', '.join(sorted(missing))}"
         )
 
     if not _has_column(inspector, "transactions", "idempotency_key"):
@@ -44,20 +42,24 @@ def upgrade():
         "WHERE idempotency_key IS NOT NULL"
     ))
 
-    op.alter_column("accounts", "balance",
-        existing_type=sa.Float(), type_=sa.Numeric(18, 2), existing_nullable=False)
-    op.alter_column("transactions", "amount",
-        existing_type=sa.Float(), type_=sa.Numeric(18, 2), existing_nullable=False)
-    op.alter_column("savings_goals", "target_amount",
-        existing_type=sa.Float(), type_=sa.Numeric(18, 2), existing_nullable=False)
-    op.alter_column("savings_goals", "current_amount",
-        existing_type=sa.Float(), type_=sa.Numeric(18, 2), existing_nullable=False)
-    op.alter_column("cards", "spending_limit",
-        existing_type=sa.Float(), type_=sa.Numeric(18, 2), existing_nullable=True)
+    for table, column, nullable in (
+        ("accounts", "balance", False),
+        ("transactions", "amount", False),
+        ("savings_goals", "target_amount", False),
+        ("savings_goals", "current_amount", False),
+        ("cards", "spending_limit", True),
+    ):
+        op.alter_column(
+            table,
+            column,
+            existing_type=sa.Float(),
+            type_=sa.Numeric(18, 2),
+            existing_nullable=nullable,
+        )
 
 
 def downgrade():
     raise RuntimeError(
-        "Production schema repair is intentionally irreversible; "
+        "Production repair is intentionally irreversible; "
         "restore from a verified database backup instead."
     )
