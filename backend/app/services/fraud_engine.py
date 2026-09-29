@@ -4,6 +4,7 @@ Heuristic fraud scoring engine — deterministic (no random jitter).
 
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
+from decimal import Decimal
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.models.user import Transaction, TransactionType, TransactionStatus, User, Account
@@ -42,21 +43,22 @@ class FraudEngine:
         reasons: List[str] = []
 
         if from_account.balance > 0:
-            ratio = amount / from_account.balance
-            if ratio >= 0.9:
+            balance = Decimal(str(from_account.balance))
+            ratio = amount / balance
+            if ratio >= Decimal("0.9"):
                 score += 0.30
                 reasons.append("Near-full balance drain")
-            elif ratio >= 0.5:
+            elif ratio >= Decimal("0.5"):
                 score += 0.15
                 reasons.append("Large portion of balance")
 
-        if amount >= 25000:
+        if amount >= Decimal("25000"):
             score += 0.35
             reasons.append("Very high absolute amount")
-        elif amount >= 10000:
+        elif amount >= Decimal("10000"):
             score += 0.20
             reasons.append("High absolute amount")
-        elif amount >= 5000:
+        elif amount >= Decimal("5000"):
             score += 0.10
             reasons.append("Elevated amount")
 
@@ -96,7 +98,8 @@ class FraudEngine:
             .scalar()
             or 0.0
         )
-        if volume_24h + amount > 50000:
+        volume_24h = Decimal(str(volume_24h))
+        if volume_24h + amount > Decimal("50000"):
             score += 0.25
             reasons.append("24h volume limit approach")
 
@@ -127,7 +130,7 @@ class FraudEngine:
                 .scalar()
                 or 0
             )
-            if prior == 0 and amount > 1000:
+            if prior == 0 and amount > Decimal("1000"):
                 score += 0.12
                 reasons.append("First large transfer to this recipient")
 
