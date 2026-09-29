@@ -1,57 +1,30 @@
-"""Alembic environment – supports both SQLite (demo) and PostgreSQL."""
-
+"""Alembic environment – supports SQLite and PostgreSQL."""
 from logging.config import fileConfig
-from sqlalchemy import engine_from_config, pool
+import os, sys
 from alembic import context
-import os
-import sys
-
+from sqlalchemy import engine_from_config, pool
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-
 from app.core.config import settings
 from app.core.database import Base
-from app.models.user import (  # noqa: F401
-    User, Account, Transaction, Notification, SavingsGoal, Card
-)
-
+from app.models.user import User, Account, Transaction, Notification, SavingsGoal, Card  # noqa: F401
+from app.models import baas as baas_models  # noqa: F401
+from app.models import ledger as ledger_models  # noqa: F401
+from app.models import audit as audit_models  # noqa: F401
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
-
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
-
 target_metadata = Base.metadata
-
-
 def run_migrations_offline() -> None:
-    url = config.get_main_option("sqlalchemy.url")
-    context.configure(
-        url=url,
-        target_metadata=target_metadata,
-        literal_binds=True,
-        dialect_opts={"paramstyle": "named"},
-        render_as_batch=True,
-    )
+    context.configure(url=config.get_main_option("sqlalchemy.url"), target_metadata=target_metadata, literal_binds=True, dialect_opts={"paramstyle": "named"}, render_as_batch=True)
     with context.begin_transaction():
         context.run_migrations()
-
-
 def run_migrations_online() -> None:
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    connectable = engine_from_config(config.get_section(config.config_ini_section, {}), prefix="sqlalchemy.", poolclass=pool.NullPool)
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=target_metadata,
-            render_as_batch=True,
-        )
+        context.configure(connection=connection, target_metadata=target_metadata, render_as_batch=True)
         with context.begin_transaction():
             context.run_migrations()
-
-
 if context.is_offline_mode():
     run_migrations_offline()
 else:

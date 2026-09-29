@@ -20,7 +20,14 @@ def transfer(
 ):
     if idempotency_key:
         data.idempotency_key = idempotency_key
-    return transfer_v21(db, current_user, data)
+    try:
+        result = transfer_v21(db, current_user, data)
+        db.commit()
+        db.refresh(result)
+        return result
+    except Exception:
+        db.rollback()
+        raise
 
 
 @router.get("/transactions/{transaction_id}", response_model=TransactionOut)

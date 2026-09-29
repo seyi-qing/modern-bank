@@ -29,22 +29,26 @@ def review(
     if not tx:
         raise HTTPException(status_code=404, detail="Transaction not found")
     before = {"status": tx.status.value, "is_flagged": tx.is_flagged}
-    result = admin_review_transfer(db, transaction_id, data.action, data.reason, admin)
-    after = {"status": result.status.value, "is_flagged": result.is_flagged}
-    write_audit(
-        db,
-        actor=admin,
-        action="ADMIN_REVIEW_TRANSFER",
-        resource_type="transaction",
-        resource_id=result.id,
-        reason=data.reason,
-        before=before,
-        after=after,
-        request=request,
-    )
-    db.commit()
-    db.refresh(result)
-    return result
+    try:
+        result = admin_review_transfer(db, transaction_id, data.action, data.reason, admin)
+        after = {"status": result.status.value, "is_flagged": result.is_flagged}
+        write_audit(
+            db,
+            actor=admin,
+            action="ADMIN_REVIEW_TRANSFER",
+            resource_type="transaction",
+            resource_id=result.id,
+            reason=data.reason,
+            before=before,
+            after=after,
+            request=request,
+        )
+        db.commit()
+        db.refresh(result)
+        return result
+    except Exception:
+        db.rollback()
+        raise
 
 
 @router.get("/reconciliation", response_model=ReconciliationSummary)
