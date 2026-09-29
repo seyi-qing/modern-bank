@@ -3,6 +3,7 @@ Heuristic fraud scoring engine — deterministic (no random jitter).
 """
 
 from datetime import datetime, timezone, timedelta
+from decimal import Decimal
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.models.user import Transaction, TransactionType, TransactionStatus, User, Account
@@ -33,7 +34,7 @@ class FraudEngine:
     def score_transfer(
         self,
         user: User,
-        amount: float,
+        amount: Decimal,
         from_account: Account,
         to_account: Account | None = None,
     ) -> FraudResult:
