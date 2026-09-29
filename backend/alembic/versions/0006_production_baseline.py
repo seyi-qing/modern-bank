@@ -1,22 +1,25 @@
-"""Record the verified legacy production schema as an Alembic baseline.
+"""Production baseline marker for the verified legacy ModernBank schema.
 
-This revision is intentionally a no-op. It exists because the original
-production database was created by SQLAlchemy create_all() before Alembic
-history was introduced. The database already contains the structures covered
-by 0003/0004 plus the production repair changes.
+This is a separate Alembic root because the original production database was
+created by SQLAlchemy create_all() and never executed revisions 0003/0004.
 
-Do not use this revision to create or modify business tables.
+Production rollout procedure:
+1. Take/verify a database backup.
+2. Run the separately reviewed production repair migration.
+3. Verify schema, balances, ledger integrity, and row counts.
+4. Stamp this revision only after those checks pass.
+
+This marker performs no schema changes.
 """
-from alembic import op
-
 revision = "0006_production_baseline"
-down_revision = "0005_production_schema_repair"
-branch_labels = None
+down_revision = None
+branch_labels = ("production_baseline",)
 depends_on = None
+
+from alembic import op
 
 
 def upgrade():
-    # Baseline marker only; verified production schema already exists.
     pass
 
 
