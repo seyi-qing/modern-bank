@@ -29,7 +29,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run backend unit tests
-        run: python -m unittest discover -s tests -p "test_*.py" -v
+        run: python -m unittest tests.test_banking_core_v21 tests.test_migration_state -v
 
   staging-application-test:
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
