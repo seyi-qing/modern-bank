@@ -74,7 +74,7 @@ class StagingApplicationTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200, response.text)
         first = response.json()
-        self.assertEqual(first["status"], "COMPLETED")
+        self.assertEqual(first["status"], "completed")
         transaction_id = first["id"]
 
         repeated = self.client.post(
