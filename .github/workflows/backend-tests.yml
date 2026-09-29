@@ -57,5 +57,8 @@ jobs:
           test -n "$DATABASE_URL"
           echo "STAGING_DATABASE_URL is present."
 
+      - name: Verify production-derived staging baseline
+        run: python scripts/verify_production_baseline.py
+
       - name: Run application-level staging tests
         run: python -m unittest tests.test_staging_application -v
