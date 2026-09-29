@@ -3,7 +3,7 @@ name: ModernBank backend tests
 on:
   push:
     branches:
-      - feat/banking-core-hardening
+      - main
   pull_request:
     branches:
       - main
