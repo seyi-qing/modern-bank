@@ -40,8 +40,8 @@ def main():
                 "SELECT j.id FROM ledger_journals j "
                 "LEFT JOIN ledger_entries e ON e.journal_id=j.id "
                 "GROUP BY j.id "
-                "HAVING COALESCE(SUM(CASE WHEN e.direction='debit' THEN e.amount ELSE 0 END),0) "
-                "<> COALESCE(SUM(CASE WHEN e.direction='credit' THEN e.amount ELSE 0 END),0)"
+                "HAVING COALESCE(SUM(CASE WHEN e.direction='DEBIT' THEN e.amount ELSE 0 END),0) "
+                "<> COALESCE(SUM(CASE WHEN e.direction='CREDIT' THEN e.amount ELSE 0 END),0)"
                 ")"
             )).scalar(),
             "orphan_customer_ledgers": conn.execute(text(
