@@ -14,7 +14,7 @@ import json
 
 class Settings(BaseSettings):
     APP_NAME: str = "ModernBank API"
-    APP_VERSION: str = "1.4.0"
+    APP_VERSION: str = "1.4.1"
     DEBUG: bool = True
     API_PREFIX: str = "/api/v1"
 

@@ -1,5 +1,27 @@
-# Legacy transfer endpoint
+# Legacy transfer endpoint — DISABLED (v2.1.1)
 
-After deploying Banking Core v2.1, do not expose the old `POST /api/v1/banking/transfer` implementation. It mutates balances directly and predates the ledger/idempotency layer.
+`POST /api/v1/banking/transfer` returns **HTTP 410 Gone**.
 
-The frontend should call `POST /api/v1/banking/v2/transfer`. During integration, replace the old transfer route with HTTP 410 or remove it after clients have migrated.
+It previously mutated balances without the double-entry ledger or idempotency.
+
+## Correct path
+
+```http
+POST /api/v1/banking/v2/transfer
+Authorization: Bearer <access_token>
+Idempotency-Key: <client-generated-uuid>
+Content-Type: application/json
+
+{
+  "from_account_id": 2,
+  "to_account_number": "…",
+  "amount": "25.00",
+  "currency": "USD",
+  "description": "optional",
+  "idempotency_key": "same-as-header"
+}
+```
+
+Frontend `lib/api.ts` already calls `/banking/v2/transfer`.
+
+Do not re-enable the legacy route without a full ledger migration path.

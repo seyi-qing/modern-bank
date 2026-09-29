@@ -1,41 +1,62 @@
 """
-Customer banking endpoints: accounts, transfers, dashboard, insights, goals.
+Customer banking endpoints: accounts, dashboard, insights, goals.
+Legacy POST /banking/transfer is gated (HTTP 410) — use /banking/v2/transfer.
 """
 
 from typing import List
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.user import User, Transaction, SavingsGoal
 from app.models.schemas import (
-    AccountOut, TransferRequest, TransactionOut, DashboardSummary,
-    AIInsight, SavingsGoalCreate, SavingsGoalOut, UserUpdate, UserOut
+    AccountOut,
+    TransferRequest,
+    TransactionOut,
+    DashboardSummary,
+    AIInsight,
+    SavingsGoalCreate,
+    SavingsGoalOut,
+    UserUpdate,
+    UserOut,
 )
 from app.services.banking_service import (
-    get_user_accounts, transfer_funds, get_dashboard, generate_ai_insights
+    get_user_accounts,
+    get_dashboard,
+    generate_ai_insights,
 )
 
 router = APIRouter(prefix="/banking", tags=["Banking"])
 
+_LEGACY_TRANSFER_DETAIL = (
+    "Legacy POST /banking/transfer is disabled. "
+    "Use POST /api/v1/banking/v2/transfer with Idempotency-Key "
+    "(and body idempotency_key). See LEGACY_TRANSFER_DISABLE.md."
+)
+
 
 @router.get("/accounts", response_model=List[AccountOut])
-def list_accounts(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def list_accounts(
+    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
     return get_user_accounts(db, current_user.id)
 
 
 @router.get("/dashboard", response_model=DashboardSummary)
-def dashboard(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def dashboard(
+    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
     return get_dashboard(db, current_user)
 
 
-@router.post("/transfer", response_model=TransactionOut)
-def transfer(
+@router.post("/transfer", response_model=TransactionOut, deprecated=True)
+def transfer_legacy(
     data: TransferRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return transfer_funds(db, current_user, data)
+    """Hard-gated. Does not mutate balances."""
+    raise HTTPException(status_code=410, detail=_LEGACY_TRANSFER_DETAIL)
 
 
 @router.get("/transactions", response_model=List[TransactionOut])
@@ -52,12 +73,16 @@ def list_transactions(
 
 
 @router.get("/insights", response_model=List[AIInsight])
-def insights(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def insights(
+    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
     return generate_ai_insights(db, current_user)
 
 
 @router.get("/goals", response_model=List[SavingsGoalOut])
-def list_goals(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def list_goals(
+    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
     return db.query(SavingsGoal).filter(SavingsGoal.user_id == current_user.id).all()
 
 
