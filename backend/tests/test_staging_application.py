@@ -3,10 +3,9 @@ import unittest
 from decimal import Decimal
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, func
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.core.database import Base
 from app.core.deps import get_current_user
 from app.main import app
 from app.models.user import User, Account, Transaction
@@ -57,7 +56,9 @@ class StagingApplicationTests(unittest.TestCase):
             before_1 = Decimal(str(db.query(Account.balance).filter(Account.id == 1).scalar()))
             before_2 = Decimal(str(db.query(Account.balance).filter(Account.id == 2).scalar()))
 
-        key = f"ci-staging-roundtrip-{os.getenv('GITHUB_RUN_ID', 'local')}"
+        run_id = os.getenv("GITHUB_RUN_ID", "local")
+        key = f"ci-staging-roundtrip-{run_id}"
+        reverse_key = f"ci-staging-roundtrip-reverse-{run_id}"
         payload = {
             "from_account_id": 1,
             "to_account_number": self.account2.account_number,
@@ -67,73 +68,98 @@ class StagingApplicationTests(unittest.TestCase):
             "idempotency_key": key,
         }
 
-        response = self.client.post(
-            "/api/v1/banking/v2/transfer",
-            json=payload,
-            headers={"Idempotency-Key": key},
-        )
-        self.assertEqual(response.status_code, 200, response.text)
-        first = response.json()
-        self.assertEqual(first["status"], "completed")
-        transaction_id = first["id"]
-
-        repeated = self.client.post(
-            "/api/v1/banking/v2/transfer",
-            json=payload,
-            headers={"Idempotency-Key": key},
-        )
-        self.assertEqual(repeated.status_code, 200, repeated.text)
-        self.assertEqual(repeated.json()["id"], transaction_id)
-
-        with self.Session() as db:
-            source = db.query(Account).filter(Account.id == 1).one()
-            destination = db.query(Account).filter(Account.id == 2).one()
-            self.assertEqual(Decimal(str(source.balance)), before_1 - Decimal("1.00"))
-            self.assertEqual(Decimal(str(destination.balance)), before_2 + Decimal("1.00"))
-
-            journal = db.query(LedgerJournal).filter(
-                LedgerJournal.transaction_id == transaction_id
-            ).one()
-            entries = db.query(LedgerEntry).filter(
-                LedgerEntry.journal_id == journal.id
-            ).all()
-            self.assertEqual(len(entries), 2)
-            self.assertEqual(
-                sum(Decimal(str(e.amount)) for e in entries if e.direction == LedgerEntryDirection.DEBIT),
-                Decimal("1.00"),
+        transfer_created = False
+        try:
+            response = self.client.post(
+                "/api/v1/banking/v2/transfer",
+                json=payload,
+                headers={"Idempotency-Key": key},
             )
-            self.assertEqual(
-                sum(Decimal(str(e.amount)) for e in entries if e.direction == LedgerEntryDirection.CREDIT),
-                Decimal("1.00"),
-            )
-            self.assertEqual(
-                db.query(Transaction).filter(Transaction.idempotency_key == key).count(),
-                1,
-            )
+            self.assertEqual(response.status_code, 200, response.text)
+            first = response.json()
+            self.assertEqual(first["status"], "completed")
+            transaction_id = first["id"]
+            transfer_created = True
 
-        # Reverse the test transfer through the same HTTP application path.
-        app.dependency_overrides[get_current_user] = lambda: self.user2
-        reverse_key = f"ci-staging-roundtrip-reverse-{os.getenv('GITHUB_RUN_ID', 'local')}"
-        reverse_payload = {
-            "from_account_id": 2,
-            "to_account_number": self.account1.account_number,
-            "amount": "1.00",
-            "currency": "USD",
-            "description": "CI staging application test reversal",
-            "idempotency_key": reverse_key,
-        }
-        reverse = self.client.post(
-            "/api/v1/banking/v2/transfer",
-            json=reverse_payload,
-            headers={"Idempotency-Key": reverse_key},
-        )
-        self.assertEqual(reverse.status_code, 200, reverse.text)
+            repeated = self.client.post(
+                "/api/v1/banking/v2/transfer",
+                json=payload,
+                headers={"Idempotency-Key": key},
+            )
+            self.assertEqual(repeated.status_code, 200, repeated.text)
+            self.assertEqual(repeated.json()["id"], transaction_id)
 
-        with self.Session() as db:
-            after_1 = Decimal(str(db.query(Account.balance).filter(Account.id == 1).scalar()))
-            after_2 = Decimal(str(db.query(Account.balance).filter(Account.id == 2).scalar()))
-            self.assertEqual(after_1, before_1)
-            self.assertEqual(after_2, before_2)
+            with self.Session() as db:
+                source = db.query(Account).filter(Account.id == 1).one()
+                destination = db.query(Account).filter(Account.id == 2).one()
+                self.assertEqual(Decimal(str(source.balance)), before_1 - Decimal("1.00"))
+                self.assertEqual(Decimal(str(destination.balance)), before_2 + Decimal("1.00"))
+
+                journal = db.query(LedgerJournal).filter(
+                    LedgerJournal.transaction_id == transaction_id
+                ).one()
+                entries = db.query(LedgerEntry).filter(
+                    LedgerEntry.journal_id == journal.id
+                ).all()
+                self.assertEqual(len(entries), 2)
+                self.assertEqual(
+                    sum(
+                        Decimal(str(e.amount))
+                        for e in entries
+                        if e.direction == LedgerEntryDirection.DEBIT
+                    ),
+                    Decimal("1.00"),
+                )
+                self.assertEqual(
+                    sum(
+                        Decimal(str(e.amount))
+                        for e in entries
+                        if e.direction == LedgerEntryDirection.CREDIT
+                    ),
+                    Decimal("1.00"),
+                )
+                self.assertEqual(
+                    db.query(Transaction)
+                    .filter(Transaction.idempotency_key == key)
+                    .count(),
+                    1,
+                )
+        finally:
+            # Always undo a successful test transfer, even when an assertion above
+            # fails. This prevents a failed CI run from leaving balance-changing
+            # residue in the isolated staging database.
+            if transfer_created:
+                app.dependency_overrides[get_current_user] = lambda: self.user2
+                reverse_payload = {
+                    "from_account_id": 2,
+                    "to_account_number": self.account1.account_number,
+                    "amount": "1.00",
+                    "currency": "USD",
+                    "description": "CI staging application test reversal",
+                    "idempotency_key": reverse_key,
+                }
+                reverse = self.client.post(
+                    "/api/v1/banking/v2/transfer",
+                    json=reverse_payload,
+                    headers={"Idempotency-Key": reverse_key},
+                )
+                if reverse.status_code != 200:
+                    raise RuntimeError(
+                        "Staging test cleanup failed: reversal returned "
+                        f"{reverse.status_code}: {reverse.text}"
+                    )
+
+                with self.Session() as db:
+                    after_1 = Decimal(
+                        str(db.query(Account.balance).filter(Account.id == 1).scalar())
+                    )
+                    after_2 = Decimal(
+                        str(db.query(Account.balance).filter(Account.id == 2).scalar())
+                    )
+                    self.assertEqual(after_1, before_1)
+                    self.assertEqual(after_2, before_2)
+
+            app.dependency_overrides[get_current_user] = lambda: self.user1
 
     def test_health_endpoint(self):
         response = self.client.get("/health")
