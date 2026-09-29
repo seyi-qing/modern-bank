@@ -4,20 +4,17 @@ import { useState } from "react";
 import Link from "next/link";
 import { login, getApiBase, readToken } from "@/lib/api";
 import { useUserStore } from "@/lib/store";
-import { enterDemoMode, demoUser, demoAdmin } from "@/lib/demo";
 
 export default function LoginPage() {
   const setUser = useUserStore((s) => s.setUser);
-  const [email, setEmail] = useState("demo@modernbank.dev");
-  const [password, setPassword] = useState("Demo1234!");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [showOffline, setShowOffline] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
-    setShowOffline(false);
     setLoading(true);
     try {
       const data = await login(email, password);
@@ -37,21 +34,8 @@ export default function LoginPage() {
     } catch (err: any) {
       const msg = err?.message || "Login failed";
       setError(msg);
-      if (err?.isNetwork) setShowOffline(true);
       setLoading(false);
     }
-  }
-
-  function startOffline(role: "customer" | "admin") {
-    enterDemoMode();
-    try {
-      localStorage.setItem("demo_role", role);
-    } catch {
-      /* */
-    }
-    const user = role === "admin" ? demoAdmin : demoUser;
-    setUser(user);
-    window.location.assign(role === "admin" ? "/admin" : "/dashboard");
   }
 
   return (
@@ -62,7 +46,7 @@ export default function LoginPage() {
             MB
           </div>
           <h1 className="text-2xl font-bold text-white">Sign in</h1>
-          <p className="text-slate-400 text-sm mt-1">ModernBank demo</p>
+          <p className="text-slate-400 text-sm mt-1">Sign in to your account</p>
         </div>
 
         <form
@@ -108,44 +92,11 @@ export default function LoginPage() {
           </p>
         </form>
 
-        {showOffline && (
-          <div className="mt-4 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
-            <p className="text-sm text-amber-100/90 leading-relaxed">
-              <strong className="text-amber-200">Backend not reachable.</strong>{" "}
-              Check the API URL and that the FastAPI project is deployed.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-2">
-              <button
-                type="button"
-                onClick={() => startOffline("customer")}
-                className="flex-1 py-2.5 rounded-lg bg-white/10 hover:bg-white/15 text-sm font-medium text-white"
-              >
-                Offline demo (customer)
-              </button>
-              <button
-                type="button"
-                onClick={() => startOffline("admin")}
-                className="flex-1 py-2.5 rounded-lg border border-white/10 hover:bg-white/5 text-sm font-medium text-slate-200"
-              >
-                Offline demo (admin)
-              </button>
-            </div>
-          </div>
-        )}
-
         <p className="text-center text-sm text-slate-500 mt-4">
           No account?{" "}
           <Link href="/register" className="text-brand-400 hover:underline">
             Register
           </Link>
-          {" · "}
-          <button
-            type="button"
-            onClick={() => startOffline("customer")}
-            className="text-slate-400 hover:text-white underline-offset-2 hover:underline"
-          >
-            Offline demo
-          </button>
         </p>
       </div>
     </div>

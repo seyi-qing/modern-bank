@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { getMe, readToken } from "@/lib/api";
 import { useUserStore } from "@/lib/store";
-import { isDemoMode } from "@/lib/demo";
 import Sidebar from "@/components/layout/Sidebar";
 
 export default function DashboardLayout({
@@ -14,10 +13,8 @@ export default function DashboardLayout({
 }) {
   const router = useRouter();
   const { user, setUser } = useUserStore();
-  const [demo, setDemo] = useState(false);
 
   useEffect(() => {
-    setDemo(isDemoMode());
     const token = readToken();
     if (!token) {
       router.replace("/login");
@@ -46,11 +43,6 @@ export default function DashboardLayout({
     <div className="flex min-h-screen bg-surface-950">
       <Sidebar />
       <main className="flex-1 overflow-x-hidden min-w-0">
-        {demo && (
-          <div className="bg-amber-500/15 border-b border-amber-500/25 text-amber-100 text-xs sm:text-sm px-4 py-2 text-center">
-            Offline demo mode — data is simulated.
-          </div>
-        )}
         <div className="p-4 pt-16 sm:p-6 lg:p-8 lg:pt-8 max-w-6xl mx-auto">
           {children}
         </div>
