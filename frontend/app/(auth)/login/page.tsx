@@ -38,7 +38,6 @@ export default function LoginPage() {
     }
   }
 
-
   return (
     <div className="min-h-screen flex items-center justify-center bg-surface-950 px-4">
       <div className="w-full max-w-md">
@@ -98,7 +97,6 @@ export default function LoginPage() {
           <Link href="/register" className="text-brand-400 hover:underline">
             Register
           </Link>
-n>
         </p>
       </div>
     </div>
