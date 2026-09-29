@@ -4,22 +4,6 @@
  */
 
 import axios, { AxiosError } from "axios";
-import {
-  isDemoMode,
-  demoUser,
-  demoAdmin,
-  demoDashboard,
-  demoAccounts,
-  demoTransactions,
-  demoCards,
-  demoInsights,
-  demoGoals,
-  demoNotifications,
-  demoAdminStats,
-  demoAdminUsers,
-  exitDemoMode,
-} from "./demo";
-
 const API_BASE =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
@@ -101,7 +85,6 @@ api.interceptors.response.use(
     if (
       error.response?.status === 401 &&
       typeof window !== "undefined" &&
-      !isDemoMode()
     ) {
       const path = window.location.pathname;
       if (!path.includes("/login") && !path.includes("/register")) {
@@ -121,7 +104,7 @@ api.interceptors.response.use(
 
 function networkMessage(err: any): string {
   if (!err?.response) {
-    return `Cannot reach API at ${API_BASE}. Deploy the FastAPI backend and set NEXT_PUBLIC_API_URL, or use Offline demo.`;
+    return `Cannot reach API at ${API_BASE}. Deploy the FastAPI backend and set NEXT_PUBLIC_API_URL.`;
   }
   const d = err.response.data?.detail;
   if (typeof d === "string") return d;
@@ -138,7 +121,6 @@ export function newIdempotencyKey(): string {
 
 export async function login(email: string, password: string) {
   try {
-    exitDemoMode();
     const { data } = await api.post("/auth/login/json", { email, password });
     if (!data?.access_token) {
       throw new Error("Login response missing access_token");
@@ -170,10 +152,6 @@ export async function register(payload: {
 }
 
 export async function getMe() {
-  if (isDemoMode()) {
-    const email = localStorage.getItem("demo_role") === "admin" ? demoAdmin.email : demoUser.email;
-    return email.startsWith("admin") ? demoAdmin : demoUser;
-  }
   hydrateAuthFromStorage();
   const { data } = await api.get("/auth/me");
   return data;
@@ -197,14 +175,12 @@ export function logout() {
 }
 
 export async function getDashboard() {
-  if (isDemoMode()) return demoDashboard;
   hydrateAuthFromStorage();
   const { data } = await api.get("/banking/dashboard");
   return data;
 }
 
 export async function getAccounts() {
-  if (isDemoMode()) return demoAccounts;
   hydrateAuthFromStorage();
   const { data } = await api.get("/banking/accounts");
   return data;
@@ -218,18 +194,6 @@ export async function transfer(payload: {
   currency?: string;
   idempotency_key?: string;
 }) {
-  if (isDemoMode()) {
-    const flagged = payload.amount >= 2000;
-    return {
-      id: Date.now(),
-      amount: payload.amount,
-      reference: `TXN-DEMO${Date.now().toString(36).toUpperCase()}`,
-      is_flagged: flagged,
-      fraud_score: flagged ? 0.71 : 0.08,
-      status: flagged ? "flagged" : "completed",
-      description: payload.description,
-    };
-  }
   hydrateAuthFromStorage();
   const idempotencyKey = payload.idempotency_key || newIdempotencyKey();
   const body = {
@@ -247,7 +211,6 @@ export async function transfer(payload: {
 }
 
 export async function getTransactions(accountId?: number, limit = 50) {
-  if (isDemoMode()) return demoTransactions;
   hydrateAuthFromStorage();
   const params: any = { limit };
   if (accountId) params.account_id = accountId;
@@ -256,14 +219,12 @@ export async function getTransactions(accountId?: number, limit = 50) {
 }
 
 export async function getInsights() {
-  if (isDemoMode()) return demoInsights;
   hydrateAuthFromStorage();
   const { data } = await api.get("/banking/insights");
   return data;
 }
 
 export async function getGoals() {
-  if (isDemoMode()) return demoGoals;
   hydrateAuthFromStorage();
   const { data } = await api.get("/banking/goals");
   return data;
@@ -274,37 +235,30 @@ export async function createGoal(payload: {
   target_amount: number;
   deadline?: string;
 }) {
-  if (isDemoMode()) {
-    return { id: Date.now(), current_amount: 0, ...payload };
-  }
   hydrateAuthFromStorage();
   const { data } = await api.post("/banking/goals", payload);
   return data;
 }
 
 export async function getAdminStats() {
-  if (isDemoMode()) return demoAdminStats;
   hydrateAuthFromStorage();
   const { data } = await api.get("/admin/stats");
   return data;
 }
 
 export async function getAdminUsers() {
-  if (isDemoMode()) return demoAdminUsers;
   hydrateAuthFromStorage();
   const { data } = await api.get("/admin/users");
   return data;
 }
 
 export async function getFlaggedTransactions() {
-  if (isDemoMode()) return demoTransactions.filter((t) => t.is_flagged);
   hydrateAuthFromStorage();
   const { data } = await api.get("/admin/transactions/flagged");
   return data;
 }
 
 export async function getAdminAllTransactions(limit = 100) {
-  if (isDemoMode()) return demoTransactions;
   hydrateAuthFromStorage();
   const { data } = await api.get("/admin/transactions", { params: { limit } });
   return data;
@@ -315,13 +269,6 @@ export async function reviewFlaggedTransaction(
   action: "approve" | "reject",
   reason: string
 ) {
-  if (isDemoMode()) {
-    return {
-      id: transactionId,
-      status: action === "approve" ? "completed" : "failed",
-      is_flagged: action === "reject",
-    };
-  }
   hydrateAuthFromStorage();
   const { data } = await api.post(`/admin/core/transactions/${transactionId}/review`, {
     action,
@@ -331,22 +278,12 @@ export async function reviewFlaggedTransaction(
 }
 
 export async function getReconciliation() {
-  if (isDemoMode()) {
-    return {
-      accounts_checked: 3,
-      accounts_balanced: 3,
-      accounts_out_of_balance: 0,
-      ok: true,
-      results: [],
-    };
-  }
   hydrateAuthFromStorage();
   const { data } = await api.get("/admin/core/reconciliation");
   return data;
 }
 
 export async function getCards() {
-  if (isDemoMode()) return demoCards;
   hydrateAuthFromStorage();
   const { data } = await api.get("/cards");
   return data;
@@ -358,20 +295,6 @@ export async function createCard(payload: {
   label?: string;
   spending_limit?: number;
 }) {
-  if (isDemoMode()) {
-    const last4 = String(Math.floor(1000 + Math.random() * 9000));
-    return {
-      id: Date.now(),
-      card_number_masked: `•••• •••• •••• ${last4}`,
-      last_four: last4,
-      card_type: payload.card_type || "virtual",
-      status: "active",
-      expiry_month: 12,
-      expiry_year: 2029,
-      spending_limit: payload.spending_limit ?? 1500,
-      label: payload.label || "Virtual",
-    };
-  }
   hydrateAuthFromStorage();
   const { data } = await api.post("/cards", payload);
   return data;
@@ -392,14 +315,12 @@ export async function unfreezeCard(cardId: number) {
 }
 
 export async function getNotifications(limit = 30) {
-  if (isDemoMode()) return demoNotifications;
   hydrateAuthFromStorage();
   const { data } = await api.get("/notifications", { params: { limit } });
   return data;
 }
 
 export async function markNotificationsRead(ids?: number[]) {
-  if (isDemoMode()) return { ok: true };
   hydrateAuthFromStorage();
   const { data } = await api.post("/notifications/read", ids ?? null);
   return data;
@@ -427,40 +348,12 @@ export async function createDepositIntent(payload: {
 }
 
 export async function getBaasDashboard() {
-  if (isDemoMode()) {
-    return {
-      deposit_accounts: 2,
-      total_available: 12500,
-      wallets: 1,
-      credit_accounts: 1,
-    };
-  }
   hydrateAuthFromStorage();
   const { data } = await api.get("/baas/dashboard");
   return data;
 }
 
 export async function listBaasAccounts() {
-  if (isDemoMode()) {
-    return [
-      {
-        id: 1,
-        name: "Alex Rivera Checking",
-        deposit_product: "checking",
-        account_number: "1000000002",
-        available: 10000,
-        balance: 10000,
-      },
-      {
-        id: 2,
-        name: "Operating Wallet (FBO)",
-        deposit_product: "wallet",
-        account_number: "9000000001",
-        available: 2500,
-        balance: 2500,
-      },
-    ];
-  }
   hydrateAuthFromStorage();
   const { data } = await api.get("/baas/accounts");
   return data;
@@ -479,14 +372,12 @@ export async function createBaasPayment(payload: any) {
 }
 
 export async function listBaasPayments(limit = 50) {
-  if (isDemoMode()) return [];
   hydrateAuthFromStorage();
   const { data } = await api.get("/baas/payments", { params: { limit } });
   return data;
 }
 
 export async function listBaasCards() {
-  if (isDemoMode()) return [];
   hydrateAuthFromStorage();
   const { data } = await api.get("/baas/cards");
   return data;
@@ -505,7 +396,6 @@ export async function toggleBaasCardFreeze(cardId: number) {
 }
 
 export async function listCreditAccounts() {
-  if (isDemoMode()) return [];
   hydrateAuthFromStorage();
   const { data } = await api.get("/baas/credit-accounts");
   return data;
@@ -517,5 +407,3 @@ export async function openCreditAccount(payload: any) {
   return data;
 }
 
-// re-export for pages that import isDemoMode from api by mistake
-export { isDemoMode };
