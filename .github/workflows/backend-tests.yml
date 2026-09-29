@@ -28,5 +28,34 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run backend tests
+      - name: Run backend unit tests
         run: python -m unittest discover -s tests -p "test_*.py" -v
+
+  staging-application-test:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      MODERNBANK_STAGING_TEST: "1"
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Verify staging credential is present
+        run: |
+          test -n "$DATABASE_URL"
+          echo "STAGING_DATABASE_URL is present."
+
+      - name: Run application-level staging tests
+        run: python -m unittest tests.test_staging_application -v
