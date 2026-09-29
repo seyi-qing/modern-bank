@@ -74,7 +74,7 @@ def classify(
     system_account_stage = {"code", "is_system"}.issubset(ledger_account_columns)
 
     if not legacy_present and not ledger_present:
-        return "EMPTY_OR_FRESH"
+        return "EMPTY_OR_FRESH" if not tables else "UNKNOWN_OR_PARTIAL_SCHEMA"
 
     if legacy_present and not ledger_present and not idempotency_present:
         return "LEGACY_CREATE_ALL_BASELINE"
