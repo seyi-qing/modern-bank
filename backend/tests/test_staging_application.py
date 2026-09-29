@@ -57,7 +57,7 @@ class StagingApplicationTests(unittest.TestCase):
             before_1 = Decimal(str(db.query(Account.balance).filter(Account.id == 1).scalar()))
             before_2 = Decimal(str(db.query(Account.balance).filter(Account.id == 2).scalar()))
 
-        key = "ci-staging-roundtrip-001"
+        key = f"ci-staging-roundtrip-{os.getenv('GITHUB_RUN_ID', 'local')}"
         payload = {
             "from_account_id": 1,
             "to_account_number": self.account2.account_number,
@@ -74,6 +74,7 @@ class StagingApplicationTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200, response.text)
         first = response.json()
+        self.assertEqual(first["status"], "COMPLETED")
         transaction_id = first["id"]
 
         repeated = self.client.post(
@@ -112,7 +113,7 @@ class StagingApplicationTests(unittest.TestCase):
 
         # Reverse the test transfer through the same HTTP application path.
         app.dependency_overrides[get_current_user] = lambda: self.user2
-        reverse_key = "ci-staging-roundtrip-reverse-001"
+        reverse_key = f"ci-staging-roundtrip-reverse-{os.getenv('GITHUB_RUN_ID', 'local')}"
         reverse_payload = {
             "from_account_id": 2,
             "to_account_number": self.account1.account_number,
