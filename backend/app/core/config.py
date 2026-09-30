@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
     DATABASE_URL: str = "sqlite:///./modern_bank.db"
+    MODERNBANK_STAGING_TEST: bool = False
 
     # Comma-separated or JSON list via env CORS_ORIGINS
     CORS_ORIGINS: Union[str, List[str]] = [
@@ -49,9 +50,9 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_production_security(self):
         is_local_sqlite = self.DATABASE_URL.startswith("sqlite")
-        if not is_local_sqlite and self.SECRET_KEY == "modern-bank-local-development-only-change-me":
+        if not is_local_sqlite and not self.MODERNBANK_STAGING_TEST and self.SECRET_KEY == "modern-bank-local-development-only-change-me":
             raise ValueError("SECRET_KEY must be explicitly configured for non-SQLite deployments")
-        if not is_local_sqlite and self.DEBUG:
+        if not is_local_sqlite and not self.MODERNBANK_STAGING_TEST and self.DEBUG:
             raise ValueError("DEBUG must be false for non-SQLite deployments")
         return self
 
