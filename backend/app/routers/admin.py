@@ -5,6 +5,7 @@ Never exposes balance-edit operations.
 
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_staff, require_perm
@@ -63,19 +64,39 @@ def update_user(
     before = {
         "is_active": user.is_active,
         "kyc_status": user.kyc_status,
-        "role": user.role.value,
+        "role": user.role.value if hasattr(user.role, "value") else str(user.role),
     }
 
     if data.role is not None:
-        if staff.role != UserRole.ADMIN:
+        staff_role = staff.role.value if hasattr(staff.role, "value") else str(staff.role)
+        if staff_role != UserRole.ADMIN.value:
             raise HTTPException(status_code=403, detail="Only admin may change user roles")
-        user.role = data.role
+        new_role = data.role.value if isinstance(data.role, UserRole) else str(data.role)
+        try:
+            # Cast via SQL so we never fight SQLAlchemy enum label mismatches
+            db.execute(
+                text("UPDATE users SET role = :role WHERE id = :id"),
+                {"role": new_role, "id": user_id},
+            )
+            db.flush()
+            db.refresh(user)
+        except Exception as exc:
+            db.rollback()
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Could not set role to '{new_role}'. "
+                    f"Ensure enum value exists in Postgres (migration 0009). "
+                    f"DB error: {exc}"
+                ),
+            ) from exc
 
     if data.is_active is not None:
         user.is_active = data.is_active
     if data.kyc_status is not None:
         user.kyc_status = data.kyc_status
 
+    after_role = user.role.value if hasattr(user.role, "value") else str(user.role)
     write_audit(
         db,
         actor=staff,
@@ -87,7 +108,7 @@ def update_user(
         after={
             "is_active": user.is_active,
             "kyc_status": user.kyc_status,
-            "role": user.role.value,
+            "role": after_role,
         },
         request=request,
     )
@@ -155,7 +176,13 @@ def pending_card_requests(
     staff: User = Depends(require_perm(Permission.CARDS_OPS)),
     db: Session = Depends(get_db),
 ):
-    return list_pending_card_requests(db)
+    try:
+        return list_pending_card_requests(db)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Card requests query failed (is table card_requests migrated?): {exc}",
+        ) from exc
 
 
 @router.post("/card-requests/{request_id}/review", response_model=CardRequestOut)
@@ -216,9 +243,10 @@ def all_transactions(
 
 @router.get("/me/permissions")
 def my_permissions(staff: User = Depends(get_current_staff)):
-    from app.core.permissions import permissions_for
+    from app.core.permissions import permissions_for, _role_key
 
+    role = _role_key(staff)
     return {
-        "role": staff.role.value,
-        "permissions": sorted(p.value for p in permissions_for(staff.role)),
+        "role": role.value if role else str(staff.role),
+        "permissions": sorted(p.value for p in permissions_for(role)),
     }

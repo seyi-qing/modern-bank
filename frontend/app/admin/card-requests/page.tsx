@@ -5,6 +5,14 @@ import { getAdminCardRequests, reviewCardRequest } from "@/lib/api";
 import { Card } from "@/components/ui/Card";
 import { CreditCard } from "lucide-react";
 
+function errMsg(e: any): string {
+  const d = e?.response?.data?.detail;
+  if (typeof d === "string") return d;
+  if (Array.isArray(d)) return d.map((x: any) => x.msg || JSON.stringify(x)).join(", ");
+  if (!e?.response) return `Network error — is the API up? ${e?.message || ""}`;
+  return e?.message || "Request failed";
+}
+
 export default function AdminCardRequestsPage() {
   const [rows, setRows] = useState<any[]>([]);
   const [error, setError] = useState("");
@@ -15,8 +23,8 @@ export default function AdminCardRequestsPage() {
       const data = await getAdminCardRequests();
       setRows(Array.isArray(data) ? data : []);
       setError("");
-    } catch {
-      setError("Failed to load card requests (need cards:ops permission)");
+    } catch (e: any) {
+      setError(errMsg(e));
     }
   }
 
@@ -34,7 +42,7 @@ export default function AdminCardRequestsPage() {
       await reviewCardRequest(id, action, reason);
       await load();
     } catch (e: any) {
-      setError(e?.response?.data?.detail || e?.message || "Review failed");
+      setError(errMsg(e));
     } finally {
       setBusy(null);
     }
@@ -46,7 +54,7 @@ export default function AdminCardRequestsPage() {
         <CreditCard className="w-6 h-6 text-brand-400" />
         Card requests
       </h1>
-      {error && <p className="text-sm text-red-300">{error}</p>}
+      {error && <p className="text-sm text-red-300 break-words">{error}</p>}
 
       <div className="space-y-3">
         {rows.map((r) => (
@@ -83,7 +91,7 @@ export default function AdminCardRequestsPage() {
             </div>
           </Card>
         ))}
-        {!rows.length && (
+        {!rows.length && !error && (
           <p className="text-center text-slate-500 text-sm py-10">No pending requests.</p>
         )}
       </div>

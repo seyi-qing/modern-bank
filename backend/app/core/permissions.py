@@ -1,9 +1,6 @@
 """
 ModernBank control-plane permissions.
-
-Roles are coarse; permissions gate endpoints.
 ADMIN retains full power (backward compatible with existing admin users).
-No permission allows direct Account.balance edits — money moves only via ledger ops.
 """
 from __future__ import annotations
 
@@ -27,10 +24,9 @@ class Permission(str, Enum):
     CARDS_OPS = "cards:ops"
 
 
-# Role → granted permissions (ADMIN = all)
 _ROLE_PERMISSIONS: dict[UserRole, set[Permission]] = {
     UserRole.CUSTOMER: set(),
-    UserRole.ADMIN: set(Permission),  # super-admin equivalent
+    UserRole.ADMIN: set(Permission),
     UserRole.OPERATIONS: {
         Permission.STATS_READ,
         Permission.USERS_READ,
@@ -61,7 +57,7 @@ _ROLE_PERMISSIONS: dict[UserRole, set[Permission]] = {
     UserRole.COMPLIANCE: {
         Permission.STATS_READ,
         Permission.USERS_READ,
-        Permission.USERS_WRITE,  # KYC status only in practice
+        Permission.USERS_WRITE,
         Permission.KYC_WRITE,
         Permission.TRANSACTIONS_READ,
         Permission.AUDIT_READ,
@@ -89,18 +85,48 @@ STAFF_ROLES: frozenset[UserRole] = frozenset(
 )
 
 
+def _role_key(user: User) -> UserRole | None:
+    """Normalize role whether ORM returned enum or raw string."""
+    r = user.role
+    if isinstance(r, UserRole):
+        return r
+    if isinstance(r, str):
+        try:
+            return UserRole(r)
+        except ValueError:
+            try:
+                return UserRole[r.upper()]
+            except KeyError:
+                return None
+    return None
+
+
 def is_staff(user: User) -> bool:
-    return user.role in STAFF_ROLES
+    role = _role_key(user)
+    return role in STAFF_ROLES if role else False
 
 
-def permissions_for(role: UserRole) -> set[Permission]:
+def permissions_for(role: UserRole | str | None) -> set[Permission]:
+    if role is None:
+        return set()
+    if isinstance(role, str):
+        try:
+            role = UserRole(role)
+        except ValueError:
+            return set()
+    # Admin always full set
+    if role == UserRole.ADMIN:
+        return set(Permission)
     return set(_ROLE_PERMISSIONS.get(role, set()))
 
 
 def has_permission(user: User, permission: Permission) -> bool:
     if not user.is_active:
         return False
-    return permission in permissions_for(user.role)
+    role = _role_key(user)
+    if role == UserRole.ADMIN:
+        return True
+    return permission in permissions_for(role)
 
 
 def require_permission(user: User, permission: Permission) -> None:
@@ -114,10 +140,10 @@ def require_permission(user: User, permission: Permission) -> None:
 def require_any_permission(user: User, *permissions: Permission) -> None:
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Inactive user")
-    granted = permissions_for(user.role)
-    if not any(p in granted for p in permissions):
-        needed = ", ".join(p.value for p in permissions)
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Missing one of permissions: {needed}",
-        )
+    if any(has_permission(user, p) for p in permissions):
+        return
+    needed = ", ".join(p.value for p in permissions)
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=f"Missing one of permissions: {needed}",
+    )

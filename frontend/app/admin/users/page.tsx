@@ -18,6 +18,13 @@ const STAFF_ROLES = [
   "auditor",
 ];
 
+function errMsg(e: any): string {
+  const d = e?.response?.data?.detail;
+  if (typeof d === "string") return d;
+  if (Array.isArray(d)) return d.map((x: any) => x.msg || JSON.stringify(x)).join(", ");
+  return e?.message || "Request failed";
+}
+
 export default function AdminUsersPage() {
   const me = useUserStore((s) => s.user);
   const [users, setUsers] = useState<any[]>([]);
@@ -30,8 +37,8 @@ export default function AdminUsersPage() {
       const u = await getAdminUsers(search);
       setUsers(Array.isArray(u) ? u : u?.users ?? []);
       setError("");
-    } catch {
-      setError("Failed to load users");
+    } catch (e: any) {
+      setError(errMsg(e));
     }
   }
 
@@ -45,11 +52,13 @@ export default function AdminUsersPage() {
       return;
     }
     setBusy(userId);
+    setError("");
     try {
       await updateAdminUser(userId, { role });
       await load(q || undefined);
     } catch (e: any) {
-      setError(e?.message || "Role update failed");
+      setError(errMsg(e));
+      await load(q || undefined);
     } finally {
       setBusy(null);
     }
@@ -82,7 +91,7 @@ export default function AdminUsersPage() {
         </button>
       </div>
 
-      {error && <p className="text-sm text-red-300">{error}</p>}
+      {error && <p className="text-sm text-red-300 break-words">{error}</p>}
 
       <Card className="!p-0 overflow-hidden">
         <table className="w-full text-sm">
@@ -113,7 +122,7 @@ export default function AdminUsersPage() {
                       value={u.role}
                       disabled={busy === u.id}
                       onChange={(e) => setRole(u.id, e.target.value)}
-                      className="bg-surface-800 border border-white/10 rounded-lg text-xs text-white px-2 py-1"
+                      className="bg-surface-800 border border-white/10 rounded-lg text-xs text-white px-2 py-1 max-w-[9rem]"
                     >
                       {STAFF_ROLES.map((r) => (
                         <option key={r} value={r}>
