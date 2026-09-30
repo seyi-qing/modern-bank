@@ -6,7 +6,7 @@ import {
   getFlaggedTransactions,
   getReconciliation,
 } from "@/lib/api";
-import { formatMoney, formatDateTime } from "@/lib/format";
+import { formatMoney, formatMoneyCompact, formatDateTime } from "@/lib/format";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { Shield, Users, Flag, Activity, Scale } from "lucide-react";
 import Link from "next/link";
@@ -44,46 +44,66 @@ export default function AdminHome() {
   }
 
   const tiles = [
-    { label: "Total users", value: stats.total_users, icon: Users },
-    { label: "Active users", value: stats.active_users, icon: Users },
-    { label: "24h volume", value: formatMoney(stats.transaction_volume_24h), icon: Activity },
-    { label: "Flagged", value: stats.flagged_transactions, icon: Flag },
-    { label: "Book balance", value: formatMoney(stats.total_balance), icon: Shield },
-    { label: "New today", value: stats.new_users_today, icon: Users },
+    { label: "Total users", value: String(stats.total_users), full: undefined as string | undefined, icon: Users },
+    { label: "Active users", value: String(stats.active_users), full: undefined, icon: Users },
+    {
+      label: "24h volume",
+      value: formatMoneyCompact(stats.transaction_volume_24h),
+      full: formatMoney(stats.transaction_volume_24h),
+      icon: Activity,
+    },
+    { label: "Flagged", value: String(stats.flagged_transactions), full: undefined, icon: Flag },
+    {
+      label: "Book balance",
+      value: formatMoneyCompact(stats.total_balance),
+      full: formatMoney(stats.total_balance),
+      icon: Shield,
+    },
+    { label: "New today", value: String(stats.new_users_today), full: undefined, icon: Users },
   ];
 
   return (
-    <div className="space-y-8">
-      <header>
-        <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-          <Shield className="w-6 h-6 text-brand-400" />
-          System overview
+    <div className="space-y-6 sm:space-y-8">
+      <header className="pr-2">
+        <h1 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
+          <Shield className="w-5 h-5 sm:w-6 sm:h-6 text-brand-400 shrink-0" />
+          <span className="leading-tight">System overview</span>
         </h1>
-        <p className="text-sm text-slate-500 mt-1">
+        <p className="text-xs sm:text-sm text-slate-500 mt-1">
           Ops snapshot · Banking Core v2.1 ledger enabled
         </p>
       </header>
 
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-3">
         {tiles.map((t) => (
-          <Card key={t.label} className="!p-4">
-            <div className="flex items-center gap-2 text-slate-500 text-xs mb-2">
-              <t.icon className="w-3.5 h-3.5" />
-              {t.label}
+          <Card key={t.label} className="!p-3 sm:!p-4 min-w-0">
+            <div className="flex items-center gap-1.5 text-slate-500 text-[10px] sm:text-xs mb-1.5 sm:mb-2">
+              <t.icon className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" />
+              <span className="truncate">{t.label}</span>
             </div>
-            <p className="text-xl font-semibold text-white tabular-nums">{t.value}</p>
+            <p
+              className="text-base sm:text-xl font-semibold text-white tabular-nums leading-tight break-all"
+              title={t.full || t.value}
+            >
+              {t.value}
+            </p>
+            {t.full && t.full !== t.value && (
+              <p className="text-[10px] text-slate-500 mt-1 truncate" title={t.full}>
+                {t.full}
+              </p>
+            )}
           </Card>
         ))}
       </div>
 
       {recon && (
         <Card>
-          <div className="flex items-center justify-between mb-2">
-            <CardTitle className="mb-0 flex items-center gap-2">
-              <Scale className="w-4 h-4 text-brand-400" />
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <CardTitle className="mb-0 flex items-center gap-2 text-sm sm:text-base">
+              <Scale className="w-4 h-4 text-brand-400 shrink-0" />
               Ledger reconciliation
             </CardTitle>
-            <Link href="/admin/reconciliation" className="text-xs text-brand-400">
+            <Link href="/admin/reconciliation" className="text-xs text-brand-400 shrink-0">
               Full report
             </Link>
           </div>
@@ -96,9 +116,9 @@ export default function AdminHome() {
       )}
 
       <Card>
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between gap-2 mb-3">
           <CardTitle className="mb-0">Flagged queue</CardTitle>
-          <Link href="/admin/flagged" className="text-xs text-brand-400">
+          <Link href="/admin/flagged" className="text-xs text-brand-400 shrink-0">
             Review all
           </Link>
         </div>
@@ -108,16 +128,16 @@ export default function AdminHome() {
               key={tx.id}
               className="flex justify-between gap-3 py-2 border-b border-white/5 last:border-0 text-sm"
             >
-              <div>
-                <p className="text-white">{tx.description || tx.reference}</p>
+              <div className="min-w-0">
+                <p className="text-white truncate">{tx.description || tx.reference}</p>
                 <p className="text-xs text-slate-500">
                   {tx.created_at ? formatDateTime(tx.created_at) : ""}
                   {tx.fraud_score != null
-                    ? ` · risk ${(tx.fraud_score * 100).toFixed(0)}%`
+                    ? ` · risk ${(Number(tx.fraud_score) * 100).toFixed(0)}%`
                     : ""}
                 </p>
               </div>
-              <p className="text-amber-300 font-semibold tabular-nums">
+              <p className="text-amber-300 font-semibold tabular-nums shrink-0">
                 {formatMoney(tx.amount)}
               </p>
             </li>

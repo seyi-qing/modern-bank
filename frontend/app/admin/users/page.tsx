@@ -25,6 +25,14 @@ function errMsg(e: any): string {
   return e?.message || "Request failed";
 }
 
+function RoleBadge({ role }: { role: string }) {
+  return (
+    <span className="inline-block max-w-full truncate rounded-full bg-white/5 border border-white/10 px-2.5 py-0.5 text-[11px] sm:text-xs text-slate-200">
+      {role}
+    </span>
+  );
+}
+
 export default function AdminUsersPage() {
   const me = useUserStore((s) => s.user);
   const [users, setUsers] = useState<any[]>([]);
@@ -65,14 +73,14 @@ export default function AdminUsersPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-        <Users className="w-6 h-6 text-brand-400" />
+    <div className="space-y-5 sm:space-y-6">
+      <h1 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
+        <Users className="w-5 h-5 sm:w-6 sm:h-6 text-brand-400 shrink-0" />
         Users
       </h1>
 
       <div className="flex gap-2">
-        <div className="relative flex-1">
+        <div className="relative flex-1 min-w-0">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
           <input
             value={q}
@@ -85,7 +93,7 @@ export default function AdminUsersPage() {
         <button
           type="button"
           onClick={() => load(q)}
-          className="px-4 py-2 rounded-xl bg-brand-600 text-white text-sm font-medium"
+          className="px-3 sm:px-4 py-2 rounded-xl bg-brand-600 text-white text-sm font-medium shrink-0"
         >
           Search
         </button>
@@ -93,8 +101,57 @@ export default function AdminUsersPage() {
 
       {error && <p className="text-sm text-red-300 break-words">{error}</p>}
 
-      <Card className="!p-0 overflow-hidden">
-        <table className="w-full text-sm">
+      {/* Mobile: stacked cards */}
+      <div className="space-y-3 md:hidden">
+        {users.map((u) => (
+          <Card key={u.id} className="!p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <Link
+                  href={`/admin/users/${u.id}`}
+                  className="text-brand-300 hover:underline font-medium text-sm block truncate"
+                >
+                  {u.full_name}
+                </Link>
+                <p className="text-xs text-slate-400 mt-0.5 break-all">{u.email}</p>
+              </div>
+              <span
+                className={`text-[11px] shrink-0 ${
+                  u.is_active ? "text-emerald-300" : "text-slate-500"
+                }`}
+              >
+                {u.is_active ? "active" : "disabled"}
+              </span>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {me?.role === "admin" ? (
+                <select
+                  value={u.role}
+                  disabled={busy === u.id}
+                  onChange={(e) => setRole(u.id, e.target.value)}
+                  className="bg-surface-800 border border-white/10 rounded-lg text-xs text-white px-2 py-1.5 max-w-full"
+                >
+                  {STAFF_ROLES.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <RoleBadge role={u.role} />
+              )}
+              <span className="text-[11px] text-slate-500 capitalize">KYC: {u.kyc_status}</span>
+            </div>
+          </Card>
+        ))}
+        {!users.length && (
+          <p className="text-center text-slate-500 text-sm py-10">No users.</p>
+        )}
+      </div>
+
+      {/* Desktop table */}
+      <Card className="!p-0 overflow-x-auto hidden md:block">
+        <table className="w-full text-sm min-w-[640px]">
           <thead>
             <tr className="text-left text-xs text-slate-500 border-b border-white/5">
               <th className="px-4 py-3">Name</th>
@@ -122,7 +179,7 @@ export default function AdminUsersPage() {
                       value={u.role}
                       disabled={busy === u.id}
                       onChange={(e) => setRole(u.id, e.target.value)}
-                      className="bg-surface-800 border border-white/10 rounded-lg text-xs text-white px-2 py-1 max-w-[9rem]"
+                      className="bg-surface-800 border border-white/10 rounded-lg text-xs text-white px-2 py-1"
                     >
                       {STAFF_ROLES.map((r) => (
                         <option key={r} value={r}>
@@ -131,7 +188,7 @@ export default function AdminUsersPage() {
                       ))}
                     </select>
                   ) : (
-                    <span className="capitalize text-slate-300">{u.role}</span>
+                    <RoleBadge role={u.role} />
                   )}
                 </td>
                 <td className="px-4 py-3 capitalize text-slate-400">{u.kyc_status}</td>
