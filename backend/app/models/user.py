@@ -1,12 +1,8 @@
 """
 User and related models.
 
-IMPORTANT: Neon already stores userrole labels as enum NAMES for legacy rows:
-  ADMIN, CUSTOMER
-and some newer rows as values: operations
-
-We map UserRole by **name** so ADMIN/CUSTOMER keep working.
-Staff roles must be written as OPERATIONS, RISK_ANALYST, etc. (names).
+Role labels in Neon are mixed (ADMIN/CUSTOMER names + some value-style).
+Account/tx enums: prefer values; load tolerantly via String where needed.
 """
 
 from datetime import datetime, timezone
@@ -28,7 +24,6 @@ import enum
 
 
 def _enum_names(enum_cls):
-    """Postgres labels match Python enum member names (ADMIN, CUSTOMER, …)."""
     return [member.name for member in enum_cls]
 
 
@@ -91,7 +86,7 @@ class User(Base):
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    # name= matches existing PG type; values_callable=names matches ADMIN/CUSTOMER rows
+    # Store/load by NAME so ADMIN/CUSTOMER rows keep working
     role: Mapped[UserRole] = mapped_column(
         SAEnum(
             UserRole,
@@ -127,9 +122,6 @@ class User(Base):
         "Notification", back_populates="user", cascade="all, delete-orphan"
     )
 
-    def __repr__(self) -> str:
-        return f"<User {self.email} ({self.role})>"
-
 
 class Account(Base):
     __tablename__ = "accounts"
@@ -137,17 +129,8 @@ class Account(Base):
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     account_number: Mapped[str] = mapped_column(String(20), unique=True, index=True)
-    account_type: Mapped[AccountType] = mapped_column(
-        SAEnum(
-            AccountType,
-            name="accounttype",
-            values_callable=_enum_values,
-            validate_strings=True,
-            create_constraint=False,
-            native_enum=True,
-        ),
-        default=AccountType.CHECKING,
-    )
+    # String avoids PG enum name/value LookupError on read; app treats as str
+    account_type: Mapped[str] = mapped_column(String(32), default="checking")
     balance: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0.00"))
     currency: Mapped[str] = mapped_column(String(3), default="USD")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -162,9 +145,6 @@ class Account(Base):
         back_populates="account",
     )
     cards: Mapped[list["Card"]] = relationship("Card", back_populates="account")
-
-    def __repr__(self) -> str:
-        return f"<Account {self.account_number} bal={self.balance}>"
 
 
 class Transaction(Base):
@@ -185,29 +165,13 @@ class Transaction(Base):
     )
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), default="USD")
-    type: Mapped[TransactionType] = mapped_column(
-        SAEnum(
-            TransactionType,
-            values_callable=_enum_values,
-            validate_strings=True,
-            create_constraint=False,
-        ),
-        nullable=False,
-    )
-    status: Mapped[TransactionStatus] = mapped_column(
-        SAEnum(
-            TransactionStatus,
-            values_callable=_enum_values,
-            validate_strings=True,
-            create_constraint=False,
-        ),
-        default=TransactionStatus.COMPLETED,
-    )
+    type: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="completed")
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
     reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
     idempotency_key: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     is_flagged: Mapped[bool] = mapped_column(Boolean, default=False)
-    fraud_score: Mapped[float] = mapped_column(Numeric(8, 4), default=0)
+    fraud_score: Mapped[Decimal] = mapped_column(Numeric(8, 4), default=Decimal("0"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -218,9 +182,6 @@ class Transaction(Base):
     account: Mapped["Account"] = relationship(
         "Account", foreign_keys=[account_id], back_populates="transactions"
     )
-
-    def __repr__(self) -> str:
-        return f"<Tx {self.id} {self.type} {self.amount}>"
 
 
 class Notification(Base):
@@ -261,26 +222,8 @@ class Card(Base):
     account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), nullable=False)
     card_number_masked: Mapped[str] = mapped_column(String(20), nullable=False)
     last_four: Mapped[str] = mapped_column(String(4), nullable=False)
-    card_type: Mapped[CardType] = mapped_column(
-        SAEnum(
-            CardType,
-            name="cardtype",
-            values_callable=_enum_values,
-            validate_strings=True,
-            create_constraint=False,
-        ),
-        default=CardType.VIRTUAL,
-    )
-    status: Mapped[CardStatus] = mapped_column(
-        SAEnum(
-            CardStatus,
-            name="cardstatus",
-            values_callable=_enum_values,
-            validate_strings=True,
-            create_constraint=False,
-        ),
-        default=CardStatus.ACTIVE,
-    )
+    card_type: Mapped[str] = mapped_column(String(32), default="virtual")
+    status: Mapped[str] = mapped_column(String(32), default="active")
     expiry_month: Mapped[int] = mapped_column(Integer, nullable=False)
     expiry_year: Mapped[int] = mapped_column(Integer, nullable=False)
     spending_limit: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
@@ -292,6 +235,3 @@ class Card(Base):
 
     owner: Mapped["User"] = relationship("User", back_populates="cards")
     account: Mapped["Account"] = relationship("Account", back_populates="cards")
-
-    def __repr__(self) -> str:
-        return f"<Card {self.last_four} {self.status}>"
