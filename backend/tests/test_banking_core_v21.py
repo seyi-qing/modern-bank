@@ -14,7 +14,7 @@ from app.models.user import (
     TransactionType,
     TransactionStatus,
 )
-from app.models.ledger import LedgerJournal, LedgerEntry, LedgerEntryDirection
+from app.models.ledger import LedgerAccount, LedgerJournal, LedgerEntry, LedgerEntryDirection
 from app.models import audit as _audit_models  # noqa: F401
 from app.models import baas as _baas_models  # noqa: F401
 from app.services.banking_core_v21 import transfer_v21, admin_review_transfer
@@ -80,6 +80,9 @@ class BankingCoreV21ServiceTests(unittest.TestCase):
             is_active=True,
         )
         self.db.add_all([self.source, self.destination])
+        self.db.commit()
+        self._add_opening_ledger(self.source, Decimal("1000.00"))
+        self._add_opening_ledger(self.destination, Decimal("100.00"))
         self.db.commit()
 
     def tearDown(self):
@@ -197,9 +200,48 @@ class BankingCoreV21ServiceTests(unittest.TestCase):
         self.assertEqual(t1.user_id, self.user.id)
         self.assertEqual(t2.user_id, self.recipient.id)
 
+    def _add_opening_ledger(self, account, amount):
+        ledger_account = LedgerAccount(
+            account_id=account.id,
+            code=f"CI-ACCOUNT:{account.id}",
+            currency=account.currency,
+            is_system=False,
+        )
+        system_account = LedgerAccount(
+            code=f"CI-SYSTEM:{account.id}",
+            currency=account.currency,
+            is_system=True,
+        )
+        journal = LedgerJournal(
+            reference=f"CI-OPENING:{self._test_run_id}:{account.id}",
+            currency=account.currency,
+            description="CI opening balance",
+        )
+        self.db.add_all([ledger_account, system_account, journal])
+        self.db.flush()
+        self.db.add_all([
+            LedgerEntry(
+                journal_id=journal.id,
+                ledger_account_id=ledger_account.id,
+                direction=LedgerEntryDirection.CREDIT,
+                amount=amount,
+                currency=account.currency,
+            ),
+            LedgerEntry(
+                journal_id=journal.id,
+                ledger_account_id=system_account.id,
+                direction=LedgerEntryDirection.DEBIT,
+                amount=amount,
+                currency=account.currency,
+            ),
+        ])
+        self.db.flush()
+
     def test_flagged_transfer_approve_keeps_recon_ok(self):
         # Force high amount to trip fraud threshold
         self.source.balance = Decimal("30000.00")
+        self._add_opening_ledger(self.source, Decimal("30000.00"))
+        self._add_opening_ledger(self.destination, Decimal("100.00"))
         self.db.commit()
 
         req = TransferV21Request(
