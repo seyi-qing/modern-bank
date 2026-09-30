@@ -37,22 +37,24 @@ class BankingCoreV21ServiceTests(unittest.TestCase):
 
     def setUp(self):
         self.db = self.Session()
+        self._test_run_id = getattr(self.__class__, "_test_run_id", 0) + 1
+        self.__class__._test_run_id = self._test_run_id
         self.user = User(
-            email="ci-customer@example.test",
+            email=f"ci-customer-{self._test_run_id}@example.test",
             hashed_password="test",
             full_name="CI Customer",
             role=UserRole.CUSTOMER,
             is_active=True,
         )
         self.recipient = User(
-            email="ci-recipient@example.test",
+            email=f"ci-recipient-{self._test_run_id}@example.test",
             hashed_password="test",
             full_name="CI Recipient",
             role=UserRole.CUSTOMER,
             is_active=True,
         )
         self.admin = User(
-            email="ci-admin@example.test",
+            email=f"ci-admin-{self._test_run_id}@example.test",
             hashed_password="test",
             full_name="CI Admin",
             role=UserRole.ADMIN,
