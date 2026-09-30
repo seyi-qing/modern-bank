@@ -1,8 +1,12 @@
 """
 User and related models.
-RBAC: customer + staff roles (admin retains full power).
-Enums use values_callable so Postgres labels (customer, operations, …)
-match Python enum .value — prevents LookupError 500 on staff users.
+
+IMPORTANT: Neon already stores userrole labels as enum NAMES for legacy rows:
+  ADMIN, CUSTOMER
+and some newer rows as values: operations
+
+We map UserRole by **name** so ADMIN/CUSTOMER keep working.
+Staff roles must be written as OPERATIONS, RISK_ANALYST, etc. (names).
 """
 
 from datetime import datetime, timezone
@@ -21,6 +25,11 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 import enum
+
+
+def _enum_names(enum_cls):
+    """Postgres labels match Python enum member names (ADMIN, CUSTOMER, …)."""
+    return [member.name for member in enum_cls]
 
 
 def _enum_values(enum_cls):
@@ -82,13 +91,15 @@ class User(Base):
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # name= matches existing PG type; values_callable=names matches ADMIN/CUSTOMER rows
     role: Mapped[UserRole] = mapped_column(
         SAEnum(
             UserRole,
             name="userrole",
-            values_callable=_enum_values,
+            values_callable=_enum_names,
             validate_strings=True,
             create_constraint=False,
+            native_enum=True,
         ),
         default=UserRole.CUSTOMER,
     )
@@ -133,6 +144,7 @@ class Account(Base):
             values_callable=_enum_values,
             validate_strings=True,
             create_constraint=False,
+            native_enum=True,
         ),
         default=AccountType.CHECKING,
     )
