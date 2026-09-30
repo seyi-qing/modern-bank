@@ -1,7 +1,8 @@
 """
 User and related models.
 RBAC: customer + staff roles (admin retains full power).
-Banking Core v2.1.1: money as Numeric(18,2); idempotency unique per (user_id, key).
+Enums use values_callable so Postgres labels (customer, operations, …)
+match Python enum .value — prevents LookupError 500 on staff users.
 """
 
 from datetime import datetime, timezone
@@ -22,9 +23,13 @@ from app.core.database import Base
 import enum
 
 
+def _enum_values(enum_cls):
+    return [member.value for member in enum_cls]
+
+
 class UserRole(str, enum.Enum):
     CUSTOMER = "customer"
-    ADMIN = "admin"  # full control-plane (super-admin)
+    ADMIN = "admin"
     OPERATIONS = "operations"
     RISK_ANALYST = "risk_analyst"
     FINANCE = "finance"
@@ -77,7 +82,16 @@ class User(Base):
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    role: Mapped[UserRole] = mapped_column(SAEnum(UserRole), default=UserRole.CUSTOMER)
+    role: Mapped[UserRole] = mapped_column(
+        SAEnum(
+            UserRole,
+            name="userrole",
+            values_callable=_enum_values,
+            validate_strings=True,
+            create_constraint=False,
+        ),
+        default=UserRole.CUSTOMER,
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     kyc_status: Mapped[str] = mapped_column(String(50), default="pending")
@@ -113,7 +127,14 @@ class Account(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     account_number: Mapped[str] = mapped_column(String(20), unique=True, index=True)
     account_type: Mapped[AccountType] = mapped_column(
-        SAEnum(AccountType), default=AccountType.CHECKING
+        SAEnum(
+            AccountType,
+            name="accounttype",
+            values_callable=_enum_values,
+            validate_strings=True,
+            create_constraint=False,
+        ),
+        default=AccountType.CHECKING,
     )
     balance: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0.00"))
     currency: Mapped[str] = mapped_column(String(3), default="USD")
@@ -152,9 +173,23 @@ class Transaction(Base):
     )
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), default="USD")
-    type: Mapped[TransactionType] = mapped_column(SAEnum(TransactionType), nullable=False)
+    type: Mapped[TransactionType] = mapped_column(
+        SAEnum(
+            TransactionType,
+            values_callable=_enum_values,
+            validate_strings=True,
+            create_constraint=False,
+        ),
+        nullable=False,
+    )
     status: Mapped[TransactionStatus] = mapped_column(
-        SAEnum(TransactionStatus), default=TransactionStatus.COMPLETED
+        SAEnum(
+            TransactionStatus,
+            values_callable=_enum_values,
+            validate_strings=True,
+            create_constraint=False,
+        ),
+        default=TransactionStatus.COMPLETED,
     )
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
     reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -214,8 +249,26 @@ class Card(Base):
     account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), nullable=False)
     card_number_masked: Mapped[str] = mapped_column(String(20), nullable=False)
     last_four: Mapped[str] = mapped_column(String(4), nullable=False)
-    card_type: Mapped[CardType] = mapped_column(SAEnum(CardType), default=CardType.VIRTUAL)
-    status: Mapped[CardStatus] = mapped_column(SAEnum(CardStatus), default=CardStatus.ACTIVE)
+    card_type: Mapped[CardType] = mapped_column(
+        SAEnum(
+            CardType,
+            name="cardtype",
+            values_callable=_enum_values,
+            validate_strings=True,
+            create_constraint=False,
+        ),
+        default=CardType.VIRTUAL,
+    )
+    status: Mapped[CardStatus] = mapped_column(
+        SAEnum(
+            CardStatus,
+            name="cardstatus",
+            values_callable=_enum_values,
+            validate_strings=True,
+            create_constraint=False,
+        ),
+        default=CardStatus.ACTIVE,
+    )
     expiry_month: Mapped[int] = mapped_column(Integer, nullable=False)
     expiry_year: Mapped[int] = mapped_column(Integer, nullable=False)
     spending_limit: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
