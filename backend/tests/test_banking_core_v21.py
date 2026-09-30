@@ -65,7 +65,7 @@ class BankingCoreV21ServiceTests(unittest.TestCase):
 
         self.source = Account(
             user_id=self.user.id,
-            account_number="900000000001",
+            account_number=f"900000{self._test_run_id:06d}1",
             account_type=AccountType.CHECKING,
             balance=Decimal("1000.00"),
             currency="USD",
@@ -73,7 +73,7 @@ class BankingCoreV21ServiceTests(unittest.TestCase):
         )
         self.destination = Account(
             user_id=self.recipient.id,
-            account_number="900000000002",
+            account_number=f"900000{self._test_run_id:06d}2",
             account_type=AccountType.CHECKING,
             balance=Decimal("100.00"),
             currency="USD",
