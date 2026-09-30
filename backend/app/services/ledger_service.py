@@ -109,8 +109,8 @@ def reconcile_account(db: Session, account_id: int) -> dict:
         text(
             """
             SELECT
-              COALESCE(SUM(CASE WHEN direction::text IN ('credit','CREDIT') THEN amount ELSE 0 END), 0),
-              COALESCE(SUM(CASE WHEN direction::text IN ('debit','DEBIT') THEN amount ELSE 0 END), 0)
+              COALESCE(SUM(CASE WHEN CAST(direction AS TEXT) IN ('credit','CREDIT') THEN amount ELSE 0 END), 0),
+              COALESCE(SUM(CASE WHEN CAST(direction AS TEXT) IN ('debit','DEBIT') THEN amount ELSE 0 END), 0)
             FROM ledger_entries WHERE ledger_account_id = :lid
             """
         ),
