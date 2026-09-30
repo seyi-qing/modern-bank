@@ -93,7 +93,7 @@ class FraudEngine:
                 Transaction.user_id == user.id,
                 Transaction.created_at >= one_day,
                 Transaction.type.in_([TransactionType.TRANSFER_OUT, TransactionType.PAYMENT]),
-                Transaction.status == TransactionStatus.COMPLETED,
+                Transaction.status == TransactionStatus.COMPLETED.name,
             )
             .scalar()
             or 0.0
@@ -125,7 +125,7 @@ class FraudEngine:
                 .filter(
                     Transaction.user_id == user.id,
                     Transaction.counterparty_account_id == to_account.id,
-                    Transaction.type == TransactionType.TRANSFER_OUT,
+                    Transaction.type == TransactionType.TRANSFER_OUT.name,
                 )
                 .scalar()
                 or 0
