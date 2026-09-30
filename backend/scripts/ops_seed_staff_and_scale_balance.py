@@ -1,13 +1,10 @@
 """One-shot ops script (Neon / Codespaces).
 
 1) Create staff user ops@modernbank.dev (role=operations) if missing
-2) Scale the $1,000,000 book account → $1,000,000,000 with a balanced
-   adjustment journal so reconciliation stays ok:true
+2) Scale the ~$1,000,000 account → $1,000,000,000 with balanced journal
 
-Does NOT touch Alex (demo@) balances unless that account is the $1M one
-(by design: targets account with balance closest to 1_000_000).
-
-Usage (backend/ with DATABASE_URL set):
+Usage:
+  export DATABASE_URL="postgresql://…?sslmode=require"
   python -m scripts.ops_seed_staff_and_scale_balance
 """
 from __future__ import annotations
@@ -16,9 +13,11 @@ from datetime import datetime, timezone
 from decimal import Decimal
 import secrets
 
+from sqlalchemy import text
+
 from app.core.database import SessionLocal
 from app.core.security import get_password_hash
-from app.models.user import User, UserRole, Account, AccountType
+from app.models.user import User, Account, AccountType
 from app.models.ledger import (
     LedgerAccount,
     LedgerJournal,
@@ -30,62 +29,90 @@ from app.services.ledger_service import money, reconcile_account, get_or_create_
 STAFF_EMAIL = "ops@modernbank.dev"
 STAFF_PASSWORD = "Staff123!"
 STAFF_NAME = "Ops Analyst"
-TARGET_BALANCE = Decimal("1000000000.00")  # $1B
+TARGET_BALANCE = Decimal("1000000000.00")
 NEAR_ONE_MILLION = Decimal("1000000.00")
 
 
-def ensure_staff(db) -> User:
-    user = db.query(User).filter(User.email == STAFF_EMAIL).first()
-    if user:
-        print(f"Staff user already exists: {STAFF_EMAIL} id={user.id} role={user.role}")
-        # ensure role is operations (not customer)
-        try:
-            from sqlalchemy import text
+def _role_type(db) -> str:
+    row = db.execute(
+        text(
+            """
+            SELECT t.typname
+            FROM pg_attribute a
+            JOIN pg_class c ON c.oid = a.attrelid
+            JOIN pg_type t ON t.oid = a.atttypid
+            WHERE c.relname = 'users' AND a.attname = 'role' AND NOT a.attisdropped
+            """
+        )
+    ).first()
+    return row[0] if row else "userrole"
 
-            db.execute(
-                text("UPDATE users SET role = CAST('operations' AS userrole) WHERE id = :id"),
-                {"id": user.id},
+
+def ensure_staff(db) -> int:
+    row = db.execute(
+        text("SELECT id, email, role::text FROM users WHERE email = :e"),
+        {"e": STAFF_EMAIL},
+    ).first()
+    if row:
+        print(f"Staff exists: {row[1]} id={row[0]} role={row[2]}")
+        typ = _role_type(db)
+        db.execute(
+            text(f"UPDATE users SET role = CAST('operations' AS {typ}) WHERE id = :id"),
+            {"id": row[0]},
+        )
+        db.flush()
+        return int(row[0])
+
+    typ = _role_type(db)
+    hashed = get_password_hash(STAFF_PASSWORD)
+    # Insert with explicit lowercase enum value (never OPERATIONS name)
+    result = db.execute(
+        text(
+            f"""
+            INSERT INTO users (
+                email, hashed_password, full_name, phone, role,
+                is_active, is_verified, kyc_status, created_at, last_login
+            ) VALUES (
+                :email, :hp, :name, NULL, CAST('operations' AS {typ}),
+                true, true, 'approved', NOW(), NULL
             )
-            db.flush()
-            db.refresh(user)
-        except Exception as e:
-            # try without cast if type name differs
-            print(f"  note: role update skipped ({e})")
-        return user
-
-    user = User(
-        email=STAFF_EMAIL,
-        hashed_password=get_password_hash(STAFF_PASSWORD),
-        full_name=STAFF_NAME,
-        role=UserRole.OPERATIONS,
-        is_active=True,
-        is_verified=True,
-        kyc_status="approved",
+            RETURNING id
+            """
+        ),
+        {"email": STAFF_EMAIL, "hp": hashed, "name": STAFF_NAME},
     )
-    db.add(user)
-    db.flush()
+    user_id = int(result.scalar())
 
-    # Optional small checking account so staff can log into customer surfaces if needed
     acct_num = f"2{secrets.randbelow(10**9):09d}"[:12]
-    while db.query(Account).filter(Account.account_number == acct_num).first():
+    while db.execute(
+        text("SELECT 1 FROM accounts WHERE account_number = :n"), {"n": acct_num}
+    ).first():
         acct_num = f"2{secrets.randbelow(10**9):09d}"[:12]
-    acc = Account(
-        user_id=user.id,
-        account_number=acct_num,
-        account_type=AccountType.CHECKING,
-        balance=Decimal("0.00"),
-        currency="USD",
-        is_active=True,
-    )
-    db.add(acc)
-    db.flush()
-    get_or_create_ledger_account(db, acc)
-    print(f"Created staff {STAFF_EMAIL} / {STAFF_PASSWORD} id={user.id} account={acct_num}")
-    return user
+
+    acc_id = db.execute(
+        text(
+            """
+            INSERT INTO accounts (
+                user_id, account_number, account_type, balance, currency, is_active, created_at
+            ) VALUES (
+                :uid, :num, 'checking', 0.00, 'USD', true, NOW()
+            )
+            RETURNING id
+            """
+        ),
+        {"uid": user_id, "num": acct_num},
+    ).scalar()
+
+    # Ledger shell for $0 account (no journal needed)
+    acc = db.query(Account).filter(Account.id == acc_id).first()
+    if acc:
+        get_or_create_ledger_account(db, acc)
+
+    print(f"Created staff {STAFF_EMAIL} / {STAFF_PASSWORD} id={user_id} account={acct_num}")
+    return user_id
 
 
 def find_one_million_account(db) -> Account | None:
-    """Prefer exact 1_000_000.00; else closest active USD account at/above 900k."""
     exact = (
         db.query(Account)
         .filter(Account.balance == NEAR_ONE_MILLION, Account.is_active == True)
@@ -94,13 +121,7 @@ def find_one_million_account(db) -> Account | None:
     )
     if exact:
         return exact
-    candidates = (
-        db.query(Account)
-        .filter(Account.is_active == True, Account.currency == "USD")
-        .order_by(Account.id)
-        .all()
-    )
-    for a in candidates:
+    for a in db.query(Account).filter(Account.is_active == True, Account.currency == "USD").order_by(Account.id):
         if money(a.balance) >= Decimal("900000.00") and money(a.balance) < TARGET_BALANCE:
             return a
     return None
@@ -112,14 +133,11 @@ def scale_to_one_billion(db, account: Account) -> None:
         print(f"Account {account.id} already at {TARGET_BALANCE}")
         return
     if current > TARGET_BALANCE:
-        raise SystemExit(
-            f"Account {account.id} balance {current} is already above $1B; refusing."
-        )
+        raise SystemExit(f"Account {account.id} balance {current} already above $1B; refusing.")
 
     delta = money(TARGET_BALANCE - current)
     ledger = get_or_create_ledger_account(db, account)
 
-    # System opening control (same as opening-balance script)
     control_code = f"SYSTEM:OPENING:{account.currency.upper()}"
     control = (
         db.query(LedgerAccount)
@@ -146,8 +164,6 @@ def scale_to_one_billion(db, account: Account) -> None:
     )
     db.add(journal)
     db.flush()
-
-    # Double-entry: debit system control, credit customer liability account
     db.add_all(
         [
             LedgerEntry(
@@ -186,7 +202,7 @@ def main():
 
         target = find_one_million_account(db)
         if not target:
-            print("No ~$1M account found to scale; staff user step only.")
+            print("No ~$1M account found to scale; staff step only.")
             db.commit()
             return
 
@@ -197,11 +213,17 @@ def main():
         scale_to_one_billion(db, target)
         db.commit()
 
-        # Final recon summary
         from app.services.ledger_service import reconcile_all_accounts
 
         summary = reconcile_all_accounts(db)
-        print("Recon:", summary["ok"], "balanced", summary["accounts_balanced"], "/", summary["accounts_checked"])
+        print(
+            "Recon:",
+            summary["ok"],
+            "balanced",
+            summary["accounts_balanced"],
+            "/",
+            summary["accounts_checked"],
+        )
     except Exception:
         db.rollback()
         raise
