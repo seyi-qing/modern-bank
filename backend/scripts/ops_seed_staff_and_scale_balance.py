@@ -17,7 +17,7 @@ from sqlalchemy import text
 
 from app.core.database import SessionLocal
 from app.core.security import get_password_hash
-from app.models.user import User, Account, AccountType
+from app.models.user import Account
 from app.models.ledger import (
     LedgerAccount,
     LedgerJournal,
@@ -33,7 +33,7 @@ TARGET_BALANCE = Decimal("1000000000.00")
 NEAR_ONE_MILLION = Decimal("1000000.00")
 
 
-def _role_type(db) -> str:
+def _enum_type(db, table: str, column: str) -> str:
     row = db.execute(
         text(
             """
@@ -41,11 +41,12 @@ def _role_type(db) -> str:
             FROM pg_attribute a
             JOIN pg_class c ON c.oid = a.attrelid
             JOIN pg_type t ON t.oid = a.atttypid
-            WHERE c.relname = 'users' AND a.attname = 'role' AND NOT a.attisdropped
+            WHERE c.relname = :table AND a.attname = :col AND NOT a.attisdropped
             """
-        )
+        ),
+        {"table": table, "col": column},
     ).first()
-    return row[0] if row else "userrole"
+    return row[0] if row else column
 
 
 def ensure_staff(db) -> int:
@@ -55,60 +56,73 @@ def ensure_staff(db) -> int:
     ).first()
     if row:
         print(f"Staff exists: {row[1]} id={row[0]} role={row[2]}")
-        typ = _role_type(db)
-        db.execute(
-            text(f"UPDATE users SET role = CAST('operations' AS {typ}) WHERE id = :id"),
-            {"id": row[0]},
-        )
-        db.flush()
-        return int(row[0])
-
-    typ = _role_type(db)
-    hashed = get_password_hash(STAFF_PASSWORD)
-    # Insert with explicit lowercase enum value (never OPERATIONS name)
-    result = db.execute(
-        text(
-            f"""
-            INSERT INTO users (
-                email, hashed_password, full_name, phone, role,
-                is_active, is_verified, kyc_status, created_at, last_login
-            ) VALUES (
-                :email, :hp, :name, NULL, CAST('operations' AS {typ}),
-                true, true, 'approved', NOW(), NULL
+        role_t = _enum_type(db, "users", "role")
+        try:
+            db.execute(
+                text(f"UPDATE users SET role = CAST('operations' AS {role_t}) WHERE id = :id"),
+                {"id": row[0]},
             )
-            RETURNING id
-            """
-        ),
-        {"email": STAFF_EMAIL, "hp": hashed, "name": STAFF_NAME},
-    )
-    user_id = int(result.scalar())
+            db.flush()
+        except Exception as e:
+            print(f"  role note: {e}")
+        # Ensure at least one account
+        has_acc = db.execute(
+            text("SELECT id FROM accounts WHERE user_id = :id LIMIT 1"),
+            {"id": row[0]},
+        ).first()
+        if has_acc:
+            return int(row[0])
+        user_id = int(row[0])
+    else:
+        role_t = _enum_type(db, "users", "role")
+        hashed = get_password_hash(STAFF_PASSWORD)
+        user_id = int(
+            db.execute(
+                text(
+                    f"""
+                    INSERT INTO users (
+                        email, hashed_password, full_name, phone, role,
+                        is_active, is_verified, kyc_status, created_at, last_login
+                    ) VALUES (
+                        :email, :hp, :name, NULL, CAST('operations' AS {role_t}),
+                        true, true, 'approved', NOW(), NULL
+                    )
+                    RETURNING id
+                    """
+                ),
+                {"email": STAFF_EMAIL, "hp": hashed, "name": STAFF_NAME},
+            ).scalar()
+        )
+        print(f"Created user {STAFF_EMAIL} id={user_id}")
 
+    acct_t = _enum_type(db, "accounts", "account_type")
     acct_num = f"2{secrets.randbelow(10**9):09d}"[:12]
     while db.execute(
         text("SELECT 1 FROM accounts WHERE account_number = :n"), {"n": acct_num}
     ).first():
         acct_num = f"2{secrets.randbelow(10**9):09d}"[:12]
 
-    acc_id = db.execute(
-        text(
-            """
-            INSERT INTO accounts (
-                user_id, account_number, account_type, balance, currency, is_active, created_at
-            ) VALUES (
-                :uid, :num, 'checking', 0.00, 'USD', true, NOW()
-            )
-            RETURNING id
-            """
-        ),
-        {"uid": user_id, "num": acct_num},
-    ).scalar()
+    acc_id = int(
+        db.execute(
+            text(
+                f"""
+                INSERT INTO accounts (
+                    user_id, account_number, account_type, balance, currency, is_active, created_at
+                ) VALUES (
+                    :uid, :num, CAST('checking' AS {acct_t}), 0.00, 'USD', true, NOW()
+                )
+                RETURNING id
+                """
+            ),
+            {"uid": user_id, "num": acct_num},
+        ).scalar()
+    )
 
-    # Ledger shell for $0 account (no journal needed)
     acc = db.query(Account).filter(Account.id == acc_id).first()
     if acc:
         get_or_create_ledger_account(db, acc)
 
-    print(f"Created staff {STAFF_EMAIL} / {STAFF_PASSWORD} id={user_id} account={acct_num}")
+    print(f"Staff {STAFF_EMAIL} / {STAFF_PASSWORD} id={user_id} account={acct_num}")
     return user_id
 
 
@@ -121,7 +135,11 @@ def find_one_million_account(db) -> Account | None:
     )
     if exact:
         return exact
-    for a in db.query(Account).filter(Account.is_active == True, Account.currency == "USD").order_by(Account.id):
+    for a in (
+        db.query(Account)
+        .filter(Account.is_active == True, Account.currency == "USD")
+        .order_by(Account.id)
+    ):
         if money(a.balance) >= Decimal("900000.00") and money(a.balance) < TARGET_BALANCE:
             return a
     return None
