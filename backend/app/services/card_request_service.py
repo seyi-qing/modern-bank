@@ -120,7 +120,7 @@ def review_card_request(
             account_id=req.account_id,
             card_type=req.card_type,
             label=req.label,
-            spending_limit=float(req.spending_limit) if req.spending_limit is not None else None,
+            spending_limit=Decimal(str(req.spending_limit)) if req.spending_limit is not None else None,
         ),
     )
     req.status = CardRequestStatus.APPROVED
