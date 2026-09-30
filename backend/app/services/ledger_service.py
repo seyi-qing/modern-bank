@@ -1,6 +1,6 @@
 """Double-entry posting and reconciliation primitives."""
 from decimal import Decimal
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
 from app.models.ledger import LedgerAccount, LedgerEntry, LedgerEntryDirection, LedgerJournal
@@ -76,15 +76,18 @@ def post_transfer(db: Session, *, transaction, source: Account, destination: Acc
 
 
 def journal_is_balanced(db: Session, journal_id: int) -> bool:
-    debit = db.query(func.coalesce(func.sum(LedgerEntry.amount), 0)).filter(
-        LedgerEntry.journal_id == journal_id,
-        LedgerEntry.direction == LedgerEntryDirection.DEBIT,
-    ).scalar() or Decimal("0")
-    credit = db.query(func.coalesce(func.sum(LedgerEntry.amount), 0)).filter(
-        LedgerEntry.journal_id == journal_id,
-        LedgerEntry.direction == LedgerEntryDirection.CREDIT,
-    ).scalar() or Decimal("0")
-    return money(debit) == money(credit)
+    row = db.execute(
+        text(
+            """
+            SELECT
+              COALESCE(SUM(CASE WHEN direction::text IN ('debit','DEBIT') THEN amount ELSE 0 END), 0),
+              COALESCE(SUM(CASE WHEN direction::text IN ('credit','CREDIT') THEN amount ELSE 0 END), 0)
+            FROM ledger_entries WHERE journal_id = :jid
+            """
+        ),
+        {"jid": journal_id},
+    ).first()
+    return money(row[0]) == money(row[1])
 
 
 def reconcile_account(db: Session, account_id: int) -> dict:
@@ -102,15 +105,19 @@ def reconcile_account(db: Session, account_id: int) -> dict:
             "difference": book,
             "balanced": book == Decimal("0.00"),
         }
-    credits = db.query(func.coalesce(func.sum(LedgerEntry.amount), 0)).filter(
-        LedgerEntry.ledger_account_id == ledger.id,
-        LedgerEntry.direction == LedgerEntryDirection.CREDIT,
-    ).scalar() or Decimal("0")
-    debits = db.query(func.coalesce(func.sum(LedgerEntry.amount), 0)).filter(
-        LedgerEntry.ledger_account_id == ledger.id,
-        LedgerEntry.direction == LedgerEntryDirection.DEBIT,
-    ).scalar() or Decimal("0")
-    ledger_balance = money(credits) - money(debits)
+    row = db.execute(
+        text(
+            """
+            SELECT
+              COALESCE(SUM(CASE WHEN direction::text IN ('credit','CREDIT') THEN amount ELSE 0 END), 0),
+              COALESCE(SUM(CASE WHEN direction::text IN ('debit','DEBIT') THEN amount ELSE 0 END), 0)
+            FROM ledger_entries WHERE ledger_account_id = :lid
+            """
+        ),
+        {"lid": ledger.id},
+    ).first()
+    credits, debits = money(row[0]), money(row[1])
+    ledger_balance = credits - debits
     book = money(account.balance)
     difference = book - ledger_balance
     return {

@@ -4,7 +4,7 @@ from uuid import uuid4
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
-from app.models.user import User, Account, Transaction, TransactionType, TransactionStatus, Notification
+from app.models.user import User, Account, Transaction, Notification
 from app.models.schemas_banking_core_v21 import TransferV21Request
 from app.services.fraud_engine import FraudEngine
 from app.services.ledger_service import post_transfer, money
@@ -33,7 +33,6 @@ def _assert_idempotency_match(tx: Transaction, data: TransferV21Request, destina
 
 
 def _lock_transfer_accounts(db: Session, source_id: int, destination_number: str):
-    """Lock both rows in deterministic primary-key order to reduce deadlocks."""
     destination_probe = db.query(Account.id).filter(
         Account.account_number == destination_number,
         Account.is_active == True,
@@ -56,6 +55,16 @@ def _lock_transfer_accounts(db: Session, source_id: int, destination_number: str
 def _return_existing(tx: Transaction, data: TransferV21Request, destination_id: int | None = None):
     _assert_idempotency_match(tx, data, destination_id)
     return tx
+
+
+def _type_str(tx) -> str:
+    t = tx.type
+    return t.value if hasattr(t, "value") else str(t).lower()
+
+
+def _status_str(tx) -> str:
+    s = tx.status
+    return s.value if hasattr(s, "value") else str(s).lower()
 
 
 def transfer_v21(db: Session, user: User, data: TransferV21Request) -> Transaction:
@@ -87,14 +96,15 @@ def transfer_v21(db: Session, user: User, data: TransferV21Request) -> Transacti
         raise HTTPException(status_code=400, detail="Insufficient funds")
 
     fraud = FraudEngine(db).score_transfer(user, data.amount, source, destination)
+    status = "flagged" if fraud.is_flagged else "completed"
     tx = Transaction(
         user_id=user.id,
         account_id=source.id,
         counterparty_account_id=destination.id,
         amount=money(data.amount),
         currency=data.currency,
-        type=TransactionType.TRANSFER_OUT,
-        status=TransactionStatus.FLAGGED if fraud.is_flagged else TransactionStatus.COMPLETED,
+        type="transfer_out",
+        status=status,
         description=data.description or f"Transfer to {destination.account_number[-4:]}",
         reference=f"TXN-{uuid4().hex[:12].upper()}",
         idempotency_key=data.idempotency_key,
@@ -127,8 +137,8 @@ def transfer_v21(db: Session, user: User, data: TransferV21Request) -> Transacti
         counterparty_account_id=source.id,
         amount=money(data.amount),
         currency=data.currency,
-        type=TransactionType.TRANSFER_IN,
-        status=TransactionStatus.COMPLETED,
+        type="transfer_in",
+        status="completed",
         description=f"Transfer from {source.account_number[-4:]}",
         reference=f"{tx.reference}-IN",
         is_flagged=False,
@@ -147,13 +157,15 @@ def admin_review_transfer(db: Session, transaction_id: int, action: str, reason:
     tx = db.query(Transaction).filter(Transaction.id == transaction_id).with_for_update().first()
     if not tx:
         raise HTTPException(status_code=404, detail="Transaction not found")
-    if tx.type != TransactionType.TRANSFER_OUT or not tx.is_flagged:
+    t = _type_str(tx)
+    s = _status_str(tx)
+    if t not in ("transfer_out", "TRANSFER_OUT") or not tx.is_flagged:
         raise HTTPException(status_code=400, detail="Only flagged transfers can be reviewed")
-    if tx.status not in (TransactionStatus.FLAGGED, TransactionStatus.PENDING):
+    if s not in ("flagged", "FLAGGED", "pending", "PENDING"):
         raise HTTPException(status_code=409, detail="Transaction is already final")
 
     if action == "reject":
-        tx.status = TransactionStatus.FAILED
+        tx.status = "failed"
         tx.is_flagged = True
         db.add(Notification(
             user_id=tx.user_id,
@@ -172,7 +184,7 @@ def admin_review_transfer(db: Session, transaction_id: int, action: str, reason:
     if money(source.balance) < money(tx.amount):
         raise HTTPException(status_code=400, detail="Insufficient funds to approve transfer")
 
-    tx.status = TransactionStatus.COMPLETED
+    tx.status = "completed"
     tx.is_flagged = False
     post_transfer(db, transaction=tx, source=source, destination=destination)
     db.add(Transaction(
@@ -181,8 +193,8 @@ def admin_review_transfer(db: Session, transaction_id: int, action: str, reason:
         counterparty_account_id=source.id,
         amount=money(tx.amount),
         currency=tx.currency,
-        type=TransactionType.TRANSFER_IN,
-        status=TransactionStatus.COMPLETED,
+        type="transfer_in",
+        status="completed",
         description=f"Reviewed transfer from {source.account_number[-4:]}",
         reference=f"{tx.reference}-IN",
         is_flagged=False,
