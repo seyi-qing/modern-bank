@@ -5,12 +5,14 @@ import { useRouter } from "next/navigation";
 import { getMe, readToken } from "@/lib/api";
 import { useUserStore } from "@/lib/store";
 import { isDemoMode } from "@/lib/demo";
+import { isStaffRole } from "@/lib/rbac";
 import Sidebar from "@/components/layout/Sidebar";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { user, setUser } = useUserStore();
   const [demo, setDemo] = useState(false);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     setDemo(isDemoMode());
@@ -21,16 +23,18 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     }
     getMe()
       .then((me) => {
-        if (me.role !== "admin") {
+        // Control plane is for any staff role (admin, operations, risk, …)
+        if (!isStaffRole(me.role)) {
           router.replace("/dashboard");
           return;
         }
         setUser(me);
+        setReady(true);
       })
       .catch(() => router.replace("/login"));
   }, [router, setUser]);
 
-  if (!user) {
+  if (!ready || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-surface-950">
         <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
@@ -47,7 +51,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             Offline demo mode (admin) — simulated ops data.
           </div>
         )}
-        {/* pl offsets fixed hamburger so titles are not covered on mobile */}
         <div className="p-4 pt-16 sm:p-6 lg:p-8 lg:pt-8 max-w-6xl mx-auto">
           {children}
         </div>
