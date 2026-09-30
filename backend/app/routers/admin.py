@@ -21,6 +21,21 @@ from app.services.customer_360 import search_users, get_customer_360
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
 
+def _userrole_type_name(db: Session) -> str:
+    row = db.execute(
+        text(
+            """
+            SELECT t.typname
+            FROM pg_attribute a
+            JOIN pg_class c ON c.oid = a.attrelid
+            JOIN pg_type t ON t.oid = a.atttypid
+            WHERE c.relname = 'users' AND a.attname = 'role' AND NOT a.attisdropped
+            """
+        )
+    ).first()
+    return row[0] if row else "userrole"
+
+
 @router.get("/stats", response_model=AdminStats)
 def stats(
     staff: User = Depends(require_perm(Permission.STATS_READ)),
@@ -72,22 +87,24 @@ def update_user(
         if staff_role != UserRole.ADMIN.value:
             raise HTTPException(status_code=403, detail="Only admin may change user roles")
         new_role = data.role.value if isinstance(data.role, UserRole) else str(data.role)
+        typ = _userrole_type_name(db)
         try:
-            # Cast via SQL so we never fight SQLAlchemy enum label mismatches
+            # Explicit cast required for Postgres enums
             db.execute(
-                text("UPDATE users SET role = :role WHERE id = :id"),
+                text(f"UPDATE users SET role = CAST(:role AS {typ}) WHERE id = :id"),
                 {"role": new_role, "id": user_id},
             )
             db.flush()
+            db.expire(user)
             db.refresh(user)
         except Exception as exc:
             db.rollback()
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    f"Could not set role to '{new_role}'. "
-                    f"Ensure enum value exists in Postgres (migration 0009). "
-                    f"DB error: {exc}"
+                    f"Could not set role to '{new_role}' on type {typ}. "
+                    f"Run: ALTER TYPE {typ} ADD VALUE IF NOT EXISTS '{new_role}'; "
+                    f"DB: {exc}"
                 ),
             ) from exc
 
