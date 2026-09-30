@@ -4,7 +4,7 @@ from uuid import uuid4
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
-from app.models.user import User, Account, Transaction, Notification
+from app.models.user import User, Account, Transaction, Notification, TransactionType, TransactionStatus
 from app.models.schemas_banking_core_v21 import TransferV21Request
 from app.services.fraud_engine import FraudEngine
 from app.services.ledger_service import post_transfer, money
@@ -103,8 +103,8 @@ def transfer_v21(db: Session, user: User, data: TransferV21Request) -> Transacti
         counterparty_account_id=destination.id,
         amount=money(data.amount),
         currency=data.currency,
-        type="transfer_out",
-        status=status,
+        type=TransactionType.TRANSFER_OUT.name,
+        status=TransactionStatus.FLAGGED.name if fraud.is_flagged else TransactionStatus.COMPLETED.name,
         description=data.description or f"Transfer to {destination.account_number[-4:]}",
         reference=f"TXN-{uuid4().hex[:12].upper()}",
         idempotency_key=data.idempotency_key,
@@ -137,8 +137,8 @@ def transfer_v21(db: Session, user: User, data: TransferV21Request) -> Transacti
         counterparty_account_id=source.id,
         amount=money(data.amount),
         currency=data.currency,
-        type="transfer_in",
-        status="completed",
+        type=TransactionType.TRANSFER_IN.name,
+        status=TransactionStatus.COMPLETED.name,
         description=f"Transfer from {source.account_number[-4:]}",
         reference=f"{tx.reference}-IN",
         is_flagged=False,
