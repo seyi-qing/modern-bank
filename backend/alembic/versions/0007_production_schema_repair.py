@@ -5,13 +5,15 @@ SQLAlchemy create_all() and already contains the v2.1 ledger schema.
 
 It performs only the missing monetary type conversions and refuses to run
 when the expected existing ledger schema or integrity checks are absent.
+
+Note: branch_labels belong only on the branch root (0006), not on child revisions.
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = "0007_production_schema_repair"
 down_revision = "0006_production_baseline"
-branch_labels = ("production_baseline",)
+branch_labels = None
 depends_on = None
 
 _MONEY_COLUMNS = (
