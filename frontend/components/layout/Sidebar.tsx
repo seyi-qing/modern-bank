@@ -30,6 +30,7 @@ const adminLinkDefs = [
   { href: "/admin/transactions", label: "All activity", icon: History },
   { href: "/admin/flagged", label: "Flagged", icon: Flag },
   { href: "/admin/reconciliation", label: "Reconciliation", icon: Scale },
+  { href: "/admin/card-requests", label: "Card requests", icon: CreditCard },
 ];
 
 export default function Sidebar() {
@@ -129,9 +130,7 @@ export default function Sidebar() {
           <div className="text-xs text-slate-400 truncate">{user?.full_name}</div>
           <div className="text-xs text-slate-600 truncate">
             {user?.email}
-            {staff && (
-              <span className="ml-1 text-brand-400">· {user?.role}</span>
-            )}
+            {staff && <span className="ml-1 text-brand-400">· {user?.role}</span>}
           </div>
           <button
             type="button"

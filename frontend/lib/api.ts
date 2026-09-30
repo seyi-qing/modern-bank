@@ -1,6 +1,7 @@
 /**
  * API client for ModernBank backend.
  * Transfers use Banking Core v2.1 (/banking/v2/transfer) with Idempotency-Key.
+ * Cards: request workflow (POST /cards/requests) — instant issue disabled.
  */
 
 import axios, { AxiosError } from "axios";
@@ -289,10 +290,25 @@ export async function getAdminStats() {
   return data;
 }
 
-export async function getAdminUsers() {
+export async function getAdminUsers(q?: string) {
   if (isDemoMode()) return demoAdminUsers;
   hydrateAuthFromStorage();
-  const { data } = await api.get("/admin/users");
+  const { data } = await api.get("/admin/users", { params: q ? { q } : {} });
+  return data;
+}
+
+export async function getCustomer360(userId: number) {
+  hydrateAuthFromStorage();
+  const { data } = await api.get(`/admin/users/${userId}`);
+  return data;
+}
+
+export async function updateAdminUser(
+  userId: number,
+  payload: { is_active?: boolean; kyc_status?: string; role?: string }
+) {
+  hydrateAuthFromStorage();
+  const { data } = await api.patch(`/admin/users/${userId}`, payload);
   return data;
 }
 
@@ -352,6 +368,14 @@ export async function getCards() {
   return data;
 }
 
+export async function getCardRequests() {
+  if (isDemoMode()) return [];
+  hydrateAuthFromStorage();
+  const { data } = await api.get("/cards/requests");
+  return data;
+}
+
+/** Submit card request (pending staff approval). */
 export async function createCard(payload: {
   account_id: number;
   card_type?: "virtual" | "physical";
@@ -359,21 +383,35 @@ export async function createCard(payload: {
   spending_limit?: number;
 }) {
   if (isDemoMode()) {
-    const last4 = String(Math.floor(1000 + Math.random() * 9000));
     return {
       id: Date.now(),
-      card_number_masked: `•••• •••• •••• ${last4}`,
-      last_four: last4,
+      status: "pending",
       card_type: payload.card_type || "virtual",
-      status: "active",
-      expiry_month: 12,
-      expiry_year: 2029,
-      spending_limit: payload.spending_limit ?? 1500,
+      account_id: payload.account_id,
       label: payload.label || "Virtual",
     };
   }
   hydrateAuthFromStorage();
-  const { data } = await api.post("/cards", payload);
+  const { data } = await api.post("/cards/requests", payload);
+  return data;
+}
+
+export async function getAdminCardRequests() {
+  hydrateAuthFromStorage();
+  const { data } = await api.get("/admin/card-requests");
+  return data;
+}
+
+export async function reviewCardRequest(
+  requestId: number,
+  action: "approve" | "reject",
+  reason: string
+) {
+  hydrateAuthFromStorage();
+  const { data } = await api.post(`/admin/card-requests/${requestId}/review`, {
+    action,
+    reason,
+  });
   return data;
 }
 
@@ -517,5 +555,4 @@ export async function openCreditAccount(payload: any) {
   return data;
 }
 
-// re-export for pages that import isDemoMode from api by mistake
 export { isDemoMode };

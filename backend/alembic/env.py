@@ -10,6 +10,7 @@ from app.models.user import User, Account, Transaction, Notification, SavingsGoa
 from app.models import baas as baas_models  # noqa: F401
 from app.models import ledger as ledger_models  # noqa: F401
 from app.models import audit as audit_models  # noqa: F401
+from app.models import card_request as card_request_models  # noqa: F401
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
 if config.config_file_name is not None:

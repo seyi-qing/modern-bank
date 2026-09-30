@@ -7,6 +7,7 @@ from app.core.database import DATABASE_URL
 from app.models import audit as audit_models  # noqa: F401
 from app.models import baas as baas_models  # noqa: F401
 from app.models import ledger as ledger_models  # noqa: F401
+from app.models import card_request as card_request_models  # noqa: F401
 from app.routers import admin, admin_core_v21, auth, baas, banking, banking_core_v21, cards, notifications, payments
 
 @asynccontextmanager
@@ -18,7 +19,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    description="ModernBank API. Banking Core v2.1 ledger enabled.",
+    description="ModernBank API. Banking Core v2.1 + control-plane RBAC.",
     lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
