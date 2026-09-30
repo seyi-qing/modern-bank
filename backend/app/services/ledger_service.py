@@ -81,7 +81,7 @@ def journal_is_balanced(db: Session, journal_id: int) -> bool:
             """
             SELECT
               COALESCE(SUM(CASE WHEN CAST(direction AS TEXT) IN ('debit','DEBIT') THEN amount ELSE 0 END), 0),
-              COALESCE(SUM(CASE WHEN direction::text IN ('credit','CREDIT') THEN amount ELSE 0 END), 0)
+              COALESCE(SUM(CASE WHEN CAST(direction AS TEXT) IN ('credit','CREDIT') THEN amount ELSE 0 END), 0)
             FROM ledger_entries WHERE journal_id = :jid
             """
         ),
