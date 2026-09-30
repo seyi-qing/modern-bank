@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useUserStore } from "@/lib/store";
 import { logout } from "@/lib/api";
+import { isStaffRole, staffNavHrefs } from "@/lib/rbac";
 import {
   LayoutDashboard, ArrowLeftRight, History, Target, Sparkles,
   Shield, Users, Flag, LogOut, Menu, X, CreditCard, Bell, PlusCircle, Building2, Scale,
@@ -23,7 +24,7 @@ const customerLinks = [
   { href: "/dashboard/notifications", label: "Alerts", icon: Bell },
 ];
 
-const adminLinks = [
+const adminLinkDefs = [
   { href: "/admin", label: "System", icon: Shield },
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/transactions", label: "All activity", icon: History },
@@ -37,7 +38,12 @@ export default function Sidebar() {
   const setUser = useUserStore((s) => s.setUser);
   const [open, setOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
-  const links = user?.role === "admin" ? adminLinks : customerLinks;
+
+  const staff = isStaffRole(user?.role);
+  const allowed = new Set(staffNavHrefs(user?.role));
+  const links = staff
+    ? adminLinkDefs.filter((l) => allowed.has(l.href))
+    : customerLinks;
 
   function handleSignOut() {
     if (signingOut) return;
@@ -76,7 +82,7 @@ export default function Sidebar() {
       >
         <div className="h-16 shrink-0 flex items-center justify-between px-5 border-b border-white/5">
           <Link
-            href={user?.role === "admin" ? "/admin" : "/dashboard"}
+            href={staff ? "/admin" : "/dashboard"}
             className="flex items-center gap-2"
             onClick={() => setOpen(false)}
           >
@@ -119,15 +125,19 @@ export default function Sidebar() {
           })}
         </nav>
 
-        {/* Sticky footer — always visible above phone home indicator */}
         <div className="shrink-0 p-4 border-t border-white/5 bg-surface-900 pb-[max(1rem,env(safe-area-inset-bottom))]">
           <div className="text-xs text-slate-400 truncate">{user?.full_name}</div>
-          <div className="text-xs text-slate-600 truncate mb-3">{user?.email}</div>
+          <div className="text-xs text-slate-600 truncate">
+            {user?.email}
+            {staff && (
+              <span className="ml-1 text-brand-400">· {user?.role}</span>
+            )}
+          </div>
           <button
             type="button"
             onClick={handleSignOut}
             disabled={signingOut}
-            className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl border border-red-500/30 bg-red-500/10 text-sm font-medium text-red-300 hover:bg-red-500/20 disabled:opacity-50 transition"
+            className="mt-3 flex items-center justify-center gap-2 w-full py-2.5 rounded-xl border border-red-500/30 bg-red-500/10 text-sm font-medium text-red-300 hover:bg-red-500/20 disabled:opacity-50 transition"
           >
             <LogOut className="w-4 h-4" />
             {signingOut ? "Signing out…" : "Sign out"}

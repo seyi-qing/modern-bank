@@ -1,8 +1,9 @@
-"""Admin operational endpoints for Banking Core v2.1."""
+"""Admin operational endpoints for Banking Core v2.1 — permission gated."""
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.core.deps import get_current_admin
+from app.core.deps import require_perm
+from app.core.permissions import Permission
 from app.models.user import User, Transaction
 from app.models.schemas import TransactionOut
 from app.models.schemas_banking_core_v21 import (
@@ -22,7 +23,7 @@ def review(
     transaction_id: int,
     data: AdminTransactionAction,
     request: Request,
-    admin: User = Depends(get_current_admin),
+    staff: User = Depends(require_perm(Permission.TRANSACTIONS_REVIEW)),
     db: Session = Depends(get_db),
 ):
     tx = db.query(Transaction).filter(Transaction.id == transaction_id).first()
@@ -30,11 +31,11 @@ def review(
         raise HTTPException(status_code=404, detail="Transaction not found")
     before = {"status": tx.status.value, "is_flagged": tx.is_flagged}
     try:
-        result = admin_review_transfer(db, transaction_id, data.action, data.reason, admin)
+        result = admin_review_transfer(db, transaction_id, data.action, data.reason, staff)
         after = {"status": result.status.value, "is_flagged": result.is_flagged}
         write_audit(
             db,
-            actor=admin,
+            actor=staff,
             action="ADMIN_REVIEW_TRANSFER",
             resource_type="transaction",
             resource_id=result.id,
@@ -53,7 +54,7 @@ def review(
 
 @router.get("/reconciliation", response_model=ReconciliationSummary)
 def reconciliation(
-    admin: User = Depends(get_current_admin),
+    staff: User = Depends(require_perm(Permission.RECONCILIATION_READ)),
     db: Session = Depends(get_db),
 ):
     return reconcile_all_accounts(db)
@@ -62,7 +63,7 @@ def reconciliation(
 @router.get("/reconciliation/{account_id}", response_model=ReconciliationResult)
 def account_reconciliation(
     account_id: int,
-    admin: User = Depends(get_current_admin),
+    staff: User = Depends(require_perm(Permission.RECONCILIATION_READ)),
     db: Session = Depends(get_db),
 ):
     return reconcile_account(db, account_id)

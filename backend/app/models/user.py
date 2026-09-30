@@ -1,6 +1,6 @@
 """
 User and related models.
-Role-based access: customer | admin
+RBAC: customer + staff roles (admin retains full power).
 Banking Core v2.1.1: money as Numeric(18,2); idempotency unique per (user_id, key).
 """
 
@@ -24,7 +24,13 @@ import enum
 
 class UserRole(str, enum.Enum):
     CUSTOMER = "customer"
-    ADMIN = "admin"
+    ADMIN = "admin"  # full control-plane (super-admin)
+    OPERATIONS = "operations"
+    RISK_ANALYST = "risk_analyst"
+    FINANCE = "finance"
+    CARD_OPERATIONS = "card_operations"
+    COMPLIANCE = "compliance"
+    AUDITOR = "auditor"
 
 
 class AccountType(str, enum.Enum):
@@ -152,7 +158,6 @@ class Transaction(Base):
     )
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
     reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    # Per-user uniqueness enforced by uq_transactions_user_idempotency (not global unique)
     idempotency_key: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     is_flagged: Mapped[bool] = mapped_column(Boolean, default=False)
     fraud_score: Mapped[float] = mapped_column(Numeric(8, 4), default=0)
