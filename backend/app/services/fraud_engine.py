@@ -4,7 +4,6 @@ Heuristic fraud scoring engine — deterministic (no random jitter).
 
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
-from decimal import Decimal
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.models.user import Transaction, TransactionType, TransactionStatus, User, Account
@@ -72,9 +71,9 @@ class FraudEngine:
                 Transaction.user_id == user.id,
                 Transaction.created_at >= one_hour,
                 Transaction.type.in_([
-                    TransactionType.TRANSFER_OUT,
-                    TransactionType.PAYMENT,
-                    TransactionType.CARD_PAYMENT,
+                    TransactionType.TRANSFER_OUT.name,
+                    TransactionType.PAYMENT.name,
+                    TransactionType.CARD_PAYMENT.name,
                 ]),
             )
             .scalar()
@@ -92,7 +91,7 @@ class FraudEngine:
             .filter(
                 Transaction.user_id == user.id,
                 Transaction.created_at >= one_day,
-                Transaction.type.in_([TransactionType.TRANSFER_OUT, TransactionType.PAYMENT]),
+                Transaction.type.in_([TransactionType.TRANSFER_OUT.name, TransactionType.PAYMENT.name]),
                 Transaction.status == TransactionStatus.COMPLETED.name,
             )
             .scalar()
