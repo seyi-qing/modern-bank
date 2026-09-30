@@ -240,8 +240,7 @@ class BankingCoreV21ServiceTests(unittest.TestCase):
     def test_flagged_transfer_approve_keeps_recon_ok(self):
         # Force high amount to trip fraud threshold
         self.source.balance = Decimal("30000.00")
-        self._add_opening_ledger(self.source, Decimal("30000.00"))
-        self._add_opening_ledger(self.destination, Decimal("100.00"))
+        self._add_opening_ledger(self.source, Decimal("29000.00"))
         self.db.commit()
 
         req = TransferV21Request(
